@@ -77,7 +77,7 @@ enum class TokenKind {
     OrAssign,         // |=
     Comma,             // ,
 
-    
+
     Hash,              // #
     HashHash           // ##
 };
@@ -206,7 +206,124 @@ public:
 
         // Punctuators
         cursor++;
-        return {start, 1, TokenKind::T_Punctuator, buffer.substr(start, 1)};
+       // Punctuators
+        if (c == '[') return {start, 1, TokenKind::L_Bracket};
+        if (c == ']') return {start, 1, TokenKind::R_Bracket};
+        if (c == '(') return {start, 1, TokenKind::L_Paren};
+        if (c == ')') return {start, 1, TokenKind::R_Paren};
+        if (c == '{') return {start, 1, TokenKind::L_Brace};
+        if (c == '}') return {start, 1, TokenKind::R_Brace};
+        if (c == '.') {
+            if (cursor + 2 < buffer.size() && buffer[cursor] == '.' && buffer[cursor + 1] == '.') {
+                cursor += 2;
+                return {start, 3, TokenKind::Ellipsis};
+            }
+            return {start, 1, TokenKind::Dot};
+        }
+        if (c == '-' && cursor < buffer.size() && buffer[cursor] == '>') {
+            cursor++;
+            return {start, 2, TokenKind::Arrow};
+        }
+        if (c == '+' && cursor < buffer.size() && buffer[cursor] == '+') {
+            cursor++;
+            return {start, 2, TokenKind::PlusPlus};
+        }
+        if (c == '-' && cursor < buffer.size() && buffer[cursor] == '-') {
+            cursor++;
+            return {start, 2, TokenKind::MinusMinus};
+        }
+        if (c == '&' && cursor < buffer.size() && buffer[cursor] == '&') {
+            cursor++;
+            return {start, 2, TokenKind::LogicAnd};
+        }
+        if (c == '|' && cursor < buffer.size() && buffer[cursor] == '|') {
+            cursor++;
+            return {start, 2, TokenKind::LogicOr};
+        }
+        if (c == '<' && cursor < buffer.size() && buffer[cursor] == '<') {
+            cursor++;
+            if (cursor < buffer.size() && buffer[cursor] == '=') {
+                cursor++;
+                return {start, 3, TokenKind::LessLessEqual};
+            }
+            return {start, 2, TokenKind::LessLess};
+        }
+        if (c == '>' && cursor < buffer.size() && buffer[cursor] == '>') {
+            cursor++;
+            if (cursor < buffer.size() && buffer[cursor] == '=') {
+                cursor++;
+                return {start, 3, TokenKind::GreaterGreaterEqual};
+            }
+            return {start, 2, TokenKind::GreaterGreater};
+        }
+        if (c == '<' && cursor < buffer.size() && buffer[cursor] == '=') {
+            cursor++;
+            return {start, 2, TokenKind::LessEqual};
+        }
+        if (c == '>' && cursor < buffer.size() && buffer[cursor] == '=') {
+            cursor++;
+            return {start, 2, TokenKind::GreaterEqual};
+        }
+        if (c == '=' && cursor < buffer.size() && buffer[cursor] == '=') {
+            cursor++;
+            return {start, 2, TokenKind::EqualEqual};
+        }
+        if (c == '!' && cursor < buffer.size() && buffer[cursor] == '=') {
+            cursor++;
+            return {start, 2, TokenKind::ExclamationEqual};
+        }
+        if (c == '*' && cursor < buffer.size() && buffer[cursor] == '=') {
+            cursor++;
+            return {start, 2, TokenKind::MulAssign};
+        }
+        if (c == '/' && cursor < buffer.size() && buffer[cursor] == '=') {
+            cursor++;
+            return {start, 2, TokenKind::DivAssign};
+        }
+        if (c == '%' && cursor < buffer.size() && buffer[cursor] == '=') {
+            cursor++;
+            return {start, 2, TokenKind::ModAssign};
+        }
+        if (c == '+' && cursor < buffer.size() && buffer[cursor] == '=') {
+            cursor++;
+            return {start, 2, TokenKind::AddAssign};
+        }
+        if (c == '-' && cursor < buffer.size() && buffer[cursor] == '=') {
+            cursor++;
+            return {start, 2, TokenKind::MinusEqual};
+        }
+        if (c == '&' && cursor < buffer.size() && buffer[cursor] == '=') {
+            cursor++;
+            return {start, 2, TokenKind::BitAndEqual};
+        }
+        if (c == '^' && cursor < buffer.size() && buffer[cursor] == '=') {
+            cursor++;
+            return {start, 2, TokenKind::XorAssign};
+        }
+        if (c == '|' && cursor < buffer.size() && buffer[cursor] == '=') {
+            cursor++;
+            return {start, 2, TokenKind::OrAssign};
+        }
+        if (c == '&') return {start, 1, TokenKind::Ampersand};
+        if (c == '*') return {start, 1, TokenKind::Star};
+        if (c == '+') return {start, 1, TokenKind::Plus};
+        if (c == '-') return {start, 1, TokenKind::Minus};
+        if (c == '~') return {start, 1, TokenKind::Tilde};
+        if (c == '!') return {start, 1, TokenKind::Not};
+        if (c == '/') return {start, 1, TokenKind::Slash};
+        if (c == '%') return {start, 1, TokenKind::Percent};
+        if (c == '<') return {start, 1, TokenKind::Less};
+        if (c == '>') return {start, 1, TokenKind::Greater};
+        if (c == '^') return {start, 1, TokenKind::XOR};
+        if (c == '|') return {start, 1, TokenKind::BitOr};
+        if (c == '?') return {start, 1, TokenKind::Question};
+        if (c == ':') return {start, 1, TokenKind::Colon};
+        if (c == ';') return {start, 1, TokenKind::Semicolon};
+        if (c == '=') return {start, 1, TokenKind::Assign};
+        if (c == ',') return {start, 1, TokenKind::Comma};
+
+        // If no match, return unknown punctuator
+        return {start, 1, TokenKind::Unknown};
     }
 
     // Process the buffer and handle preprocessor directives
