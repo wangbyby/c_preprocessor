@@ -13,20 +13,73 @@
 // TokenKind: Represents the type of tokens in the preprocessor
 enum class TokenKind {
     T_EOF = -1,
-    T_Unknown = 0,
-    T_Identifier,
-    T_Number,
-    T_StringLiteral,
-    T_CharLiteral,
-    T_Punctuator,
-    T_Hash,       // #
-    T_HashHash,   // ##
-    T_Include,    // include
-    T_Define,     // define
-    T_Undef,      // undef
-    T_If,         // if
-    T_Else,       // else
-    T_Endif,      // endif
+    Unknown = 0,
+
+    Ident,
+
+    Include, // #include
+    Define, // #define
+    Undef, // #undef
+    If, // if 
+    Else, // else
+    Endif, // #endif
+
+    // literals
+    Number,
+    CharLiteral,
+    StringLiteral,
+
+    // Punctuators
+    L_Bracket,       // [
+    R_Bracket,      // ]
+    L_Paren,         // (
+    R_Paren,        // )
+    L_Brace,         // {
+    R_Brace,        // }
+    Dot,               // .
+    Arrow,             // ->
+    PlusPlus,          // ++
+    MinusMinus,        // --
+    Ampersand,         // &
+    Star,              // *
+    Plus,              // +
+    Minus,             // -
+    Tilde,             // ~
+    Not,       // !
+    Slash,             // /
+    Percent,           // %
+    LessLess,          // <<
+    GreaterGreater,    // >>
+    Less,              // <
+    Greater,           // >
+    LessEqual,         // <=
+    GreaterEqual,      // >=
+    EqualEqual,        // ==
+    ExclamationEqual,  // !=
+    XOR,             // ^
+    BitOr,              // |
+    LogicAnd,            // &&
+    LogicOr,          // ||
+    Question,          // ?
+    Colon,             // :
+    Semicolon,         // ;
+    Ellipsis,          // ...
+    Assign,             // =
+    MulAssign,         // *=
+    DivAssign,        // /=
+    ModAssign,      // %=
+    AddAssign,         // +=
+    MinusEqual,        // -=
+    LessLessEqual,     // <<=
+    GreaterGreaterEqual, // >>=
+    BitAndEqual,          // &=
+    XorAssign,        // ^=
+    OrAssign,         // |=
+    Comma,             // ,
+
+    
+    Hash,              // #
+    HashHash           // ##
 };
 
 // Token: Represents a single token
@@ -34,11 +87,44 @@ struct Token {
     unsigned begin;
     unsigned len;
     TokenKind kind;
-    std::string value;
-
-    Token(unsigned b, unsigned l, TokenKind k, std::string v)
-        : begin(b), len(l), kind(k), value(std::move(v)) {}
+ 
+    Token(unsigned b, unsigned l, TokenKind k )
+        : begin(b), len(l), kind(k)  {}
 };
+
+struct LinColQuery{
+    std::vector<unsigned> lineoffset;
+
+    LinColQuery(){
+        lineoffset.push_back(0); // Line 1 starts at offset 0
+    }
+
+    void addLine(unsigned lineStartOffset, bool isInclude=false){
+        if(isInclude) return ;
+        
+            lineoffset.push_back(lineStartOffset);
+    }
+
+    std::pair<unsigned, unsigned> getLineCol(unsigned offset) const {
+        unsigned line = 1;
+        unsigned col = offset + 1; // Columns are 1-based
+
+        auto it =  std::lower_bound(lineoffset.begin(), lineoffset.end(), offset ) ;
+        if(it == lineoffset.end()){
+            line = lineoffset.size();
+            col = offset - lineoffset.back() + 1;
+        } else if(it == lineoffset.begin()){
+            line = 1;
+            col = offset + 1;
+        } else {
+            line = std::distance(lineoffset.begin(), it);
+            col = offset - *(it ) + 1; 
+        }
+
+        return {line, col};
+    }
+};
+
 
 // PreProcessor: The main class for the preprocessor
 class PreProcessor {
@@ -48,6 +134,9 @@ private:
     std::map<std::string, std::string> macros; // Stores object macros
     std::map<std::string, std::vector<std::string>> functionMacros; // Stores function macros
 
+    std::vector<int> includes_;
+    LinColQuery lincol_;
+
 public:
     PreProcessor(std::string input) : buffer(std::move(input)) {}
 
@@ -56,7 +145,7 @@ public:
         skip_whitespace_and_comments();
 
         if (cursor >= buffer.size()) {
-            return {cursor, 0, TokenKind::T_EOF, ""};
+            return {cursor, 0, TokenKind::T_EOF};
         }
 
         unsigned start = cursor;
@@ -65,7 +154,10 @@ public:
         // Newline
         if (c == '\n') {
             cursor++;
-            return {start, 1, TokenKind::T_Newline, "\n"};
+        
+            lincol_.addLine(cursor);
+
+            return {start, 1, TokenKind::Unknown};
         }
 
         // Identifier or Keyword
@@ -73,14 +165,14 @@ public:
             while (cursor < buffer.size() && (std::isalnum(buffer[cursor]) || buffer[cursor] == '_')) {
                 cursor++;
             }
-            std::string value = buffer.substr(start, cursor - start);
-            if (value == "include") return {start, cursor - start, TokenKind::T_Include, value};
-            if (value == "define") return {start, cursor - start, TokenKind::T_Define, value};
-            if (value == "undef") return {start, cursor - start, TokenKind::T_Undef, value};
-            if (value == "if") return {start, cursor - start, TokenKind::T_If, value};
-            if (value == "else") return {start, cursor - start, TokenKind::T_Else, value};
-            if (value == "endif") return {start, cursor - start, TokenKind::T_Endif, value};
-            return {start, cursor - start, TokenKind::T_Identifier, value};
+            std::string_view value = std::string_view(buffer.c_str() + start, cursor - start);
+            if (value == "include") return {start, cursor - start, TokenKind::Include};
+            if (value == "define") return {start, cursor - start, TokenKind:: Define };
+            if (value == "undef") return {start, cursor - start, TokenKind::Undef};
+            if (value == "if") return {start, cursor - start, TokenKind::If};
+            if (value == "else") return {start, cursor - start, TokenKind::Else};
+            if (value == "endif") return {start, cursor - start, TokenKind::Endif};
+            return {start, cursor - start, TokenKind::Ident};
         }
 
         // Number
@@ -88,7 +180,7 @@ public:
             while (cursor < buffer.size() && std::isdigit(buffer[cursor])) {
                 cursor++;
             }
-            return {start, cursor - start, TokenKind::T_Number, buffer.substr(start, cursor - start)};
+            return {start, cursor - start, TokenKind::Number };
         }
 
         // String Literal
@@ -99,7 +191,7 @@ public:
                 cursor++;
             }
             if (cursor < buffer.size()) cursor++; // Skip closing quote
-            return {start, cursor - start, TokenKind::T_StringLiteral, buffer.substr(start, cursor - start)};
+            return {start, cursor - start, TokenKind::StringLiteral };
         }
 
         // Hash (#)
@@ -107,9 +199,9 @@ public:
             cursor++;
             if (cursor < buffer.size() && buffer[cursor] == '#') {
                 cursor++;
-                return {start, 2, TokenKind::T_HashHash, "##"};
+                return {start, 2, TokenKind::HashHash};
             }
-            return {start, 1, TokenKind::T_Hash, "#"};
+            return {start, 1, TokenKind::Hash};
         }
 
         // Punctuators
