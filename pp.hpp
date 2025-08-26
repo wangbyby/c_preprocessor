@@ -241,7 +241,8 @@ public:
            token.kind == TokenKind::Assign || token.kind == TokenKind::Plus ||
            token.kind == TokenKind::Minus || token.kind == TokenKind::Star ||
            token.kind == TokenKind::Slash) &&
-          cursor < buffer.size() && buffer[cursor] != ';' && buffer[cursor] != '(' && buffer[cursor] != ')') {
+          cursor < buffer.size() && buffer[cursor] != ';' &&
+          buffer[cursor] != '(' && buffer[cursor] != ')') {
         result << " ";
       }
 
@@ -669,29 +670,28 @@ private:
     size_t end = trimmed.find_last_not_of(" \t");
     trimmed = trimmed.substr(start, end - start + 1);
 
-    // Check if it's a defined macro
-    if (macros.find(trimmed) != macros.end() ||
-        functionMacros.find(trimmed) != functionMacros.end()) {
-      return true;
-    }
-
-    // Check if it's a number
-    if (!trimmed.empty() && (std::isdigit(trimmed[0]) || trimmed[0] == '-')) {
-      try {
-        int value = std::stoi(trimmed);
-        return value != 0;
-      } catch (...) {
-        return false;
-      }
-    }
-
-    // Check for "defined(MACRO)" syntax
+    // Check for "defined(MACRO)" syntax first
     if (trimmed.find("defined(") == 0 && trimmed.back() == ')') {
       std::string macroName = trimmed.substr(8, trimmed.length() - 9);
       return macros.find(macroName) != macros.end() ||
              functionMacros.find(macroName) != functionMacros.end();
     }
 
+    // Expand macros in the condition before evaluation
+    std::string expandedCondition = expandMacrosInCondition(trimmed);
+
+    // Check if it's a number after expansion
+    if (!expandedCondition.empty() &&
+        (std::isdigit(expandedCondition[0]) || expandedCondition[0] == '-')) {
+      try {
+        int value = std::stoi(expandedCondition);
+        return value != 0;
+      } catch (...) {
+        return false;
+      }
+    }
+
+    // If it's still an identifier after expansion, it's undefined (false)
     return false;
   }
 
@@ -767,10 +767,9 @@ private:
         Token directive = next();
         if (directive.kind == TokenKind::If) {
           depth++;
-          // Process nested if
-          result << "#if ";
-          std::string nestedCondition = read_line();
-          result << nestedCondition << "\n";
+          // Handle nested #if by recursively processing it
+          handle_if_with_expansion(result);
+          depth--; // The recursive call handles the entire nested block
         } else if (directive.kind == TokenKind::Endif) {
           depth--;
           if (depth == 0) {
@@ -824,9 +823,28 @@ private:
 
       // Regular token
       std::string tokenText = getTokenText(token);
+
+      // Add space before certain operators
+      if (token.kind == TokenKind::Assign || token.kind == TokenKind::Plus ||
+          token.kind == TokenKind::Minus || token.kind == TokenKind::Star ||
+          token.kind == TokenKind::Slash) {
+        result << " ";
+      }
+
       result << tokenText;
 
-      if (token.kind == TokenKind::Ident || token.kind == TokenKind::Number) {
+      // Add space after certain tokens for readability
+      if ((token.kind == TokenKind::Ident || token.kind == TokenKind::Number ||
+           token.kind == TokenKind::Assign || token.kind == TokenKind::Plus ||
+           token.kind == TokenKind::Minus || token.kind == TokenKind::Star ||
+           token.kind == TokenKind::Slash) &&
+          cursor < buffer.size() && buffer[cursor] != ';' &&
+          buffer[cursor] != '(' && buffer[cursor] != ')') {
+        result << " ";
+      }
+
+      // Add space after semicolon
+      if (token.kind == TokenKind::Semicolon) {
         result << " ";
       }
     }
@@ -881,6 +899,20 @@ private:
         break;
       }
     }
+  }
+
+  std::string expandMacrosInCondition(const std::string &condition) {
+    // Simple macro expansion for conditions
+    std::string result = condition;
+
+    // Check if the entire condition is a macro name
+    if (macros.find(result) != macros.end()) {
+      return macros[result];
+    }
+
+    // For more complex expressions, we'd need a proper tokenizer
+    // For now, just return the original condition
+    return result;
   }
 
   std::string expandFunctionMacro(const std::string &macroName) {
