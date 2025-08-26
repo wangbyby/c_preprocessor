@@ -23,10 +23,12 @@ enum class TokenKind {
   Undef,   // #undef
   If,      // if
   Else,    // else
+  IfDef,   // #ifdef
+  IfNDef,  // #ifndef
   Endif,   // #endif
 
   // literals
-  Number,
+  PPNumber,
   CharLiteral,
   StringLiteral,
 
@@ -77,9 +79,9 @@ enum class TokenKind {
   XorAssign,           // ^=
   OrAssign,            // |=
   Comma,               // ,
+  Hash,                // #
+  HashHash             // ##
 
-  Hash,    // #
-  HashHash // ##
 };
 
 // Token: Represents a single token
