@@ -166,7 +166,7 @@ public:
              (std::isalnum(buffer[cursor]) || buffer[cursor] == '_')) {
         cursor++;
       }
-      std::string_view  value =
+      std::string_view value =
           std::string_view(buffer.c_str() + start, cursor - start);
       if (value == "include")
         return {start, cursor - start, TokenKind::Include};
