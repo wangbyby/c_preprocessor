@@ -139,6 +139,100 @@ private:
 
 public:
   PreProcessor(std::string input) : buffer(std::move(input)) {}
+  
+  // Get the text content of a token
+  std::string getTokenText(const Token& token) const {
+    if (token.begin + token.len > buffer.size()) {
+      return "";
+    }
+    return std::string(buffer.c_str() + token.begin, token.len);
+  }
+  
+  // Get the current buffer (for testing purposes)
+  const std::string& getBuffer() const {
+    return buffer;
+  }
+  
+  // Expand macros in the input and return the result
+  std::string expandMacros() {
+    // Create a new buffer with processed content
+    std::string processedBuffer = processAndExpand();
+    return processedBuffer;
+  }
+  
+  std::string processAndExpand() {
+    std::ostringstream result;
+    
+    while (cursor < buffer.size()) {
+      Token token = next();
+      if (token.kind == TokenKind::T_EOF) {
+        break;
+      }
+      
+      // Handle preprocessor directives
+      if (token.kind == TokenKind::Hash) {
+        Token directive = next();
+        if (directive.kind == TokenKind::Include) {
+          handle_include();
+        } else if (directive.kind == TokenKind::Define) {
+          handle_define();
+        } else if (directive.kind == TokenKind::Undef) {
+          handle_undef();
+        } else if (directive.kind == TokenKind::If) {
+          handle_if_with_expansion(result);
+        } else if (directive.kind == TokenKind::Else) {
+          handle_else();
+        } else if (directive.kind == TokenKind::Endif) {
+          handle_endif();
+        }
+        continue;
+      }
+      
+      // Handle newlines
+      if (token.kind == TokenKind::Unknown) {
+        result << "\n";
+        continue;
+      }
+      
+      // Check if this identifier is a macro
+      if (token.kind == TokenKind::Ident) {
+        std::string tokenText = getTokenText(token);
+        
+        // Check for function macro first
+        if (functionMacros.find(tokenText) != functionMacros.end()) {
+          // Look ahead to see if there's a '('
+          unsigned savedCursor = cursor;
+          skip_whitespace_and_comments();
+          
+          if (cursor < buffer.size() && buffer[cursor] == '(') {
+            std::string expanded = expandFunctionMacro(tokenText);
+            result << expanded;
+            continue;
+          } else {
+            // Not a function call, restore cursor and treat as regular identifier
+            cursor = savedCursor;
+          }
+        }
+        
+        // Check for object macro
+        if (macros.find(tokenText) != macros.end()) {
+          result << macros[tokenText];
+          continue;
+        }
+      }
+      
+      // Regular token - add with appropriate spacing
+      std::string tokenText = getTokenText(token);
+      result << tokenText;
+      
+      // Add space after certain tokens for readability
+      if (token.kind == TokenKind::Ident || token.kind == TokenKind::Number) {
+        result << " ";
+      }
+    }
+    
+    return result.str();
+  }
 
   // Tokenize the input buffer
   Token next() {
@@ -614,5 +708,236 @@ private:
         }
       }
     }
+  }
+  
+  void handle_if_with_expansion(std::ostringstream& result) {
+    // Read and evaluate the condition
+    std::string condition = read_line();
+    bool conditionResult = evaluate_condition(condition);
+    
+    if (conditionResult) {
+      // Process the true branch
+      processConditionalBlock(result, true);
+    } else {
+      // Skip the true branch and look for else
+      skipConditionalBlock();
+      
+      // Check if there's an else clause
+      unsigned savedCursor = cursor;
+      if (findMatchingElse()) {
+        // Process the else branch
+        processConditionalBlock(result, false);
+      } else {
+        cursor = savedCursor;
+      }
+    }
+  }
+  
+  void processConditionalBlock(std::ostringstream& result, bool isIfBranch) {
+    int depth = 1;
+    
+    while (cursor < buffer.size() && depth > 0) {
+      Token token = next();
+      if (token.kind == TokenKind::T_EOF) {
+        break;
+      }
+      
+      if (token.kind == TokenKind::Hash) {
+        Token directive = next();
+        if (directive.kind == TokenKind::If) {
+          depth++;
+          // Process nested if
+          result << "#if ";
+          std::string nestedCondition = read_line();
+          result << nestedCondition << "\n";
+        } else if (directive.kind == TokenKind::Endif) {
+          depth--;
+          if (depth == 0) {
+            return; // End of our conditional block
+          }
+        } else if (directive.kind == TokenKind::Else && depth == 1) {
+          if (isIfBranch) {
+            return; // End of if branch, don't process else
+          }
+        } else {
+          // Other directives - process them
+          if (directive.kind == TokenKind::Define) {
+            handle_define();
+          } else if (directive.kind == TokenKind::Undef) {
+            handle_undef();
+          }
+        }
+        continue;
+      }
+      
+      // Handle newlines
+      if (token.kind == TokenKind::Unknown) {
+        result << "\n";
+        continue;
+      }
+      
+      // Process regular tokens with macro expansion
+      if (token.kind == TokenKind::Ident) {
+        std::string tokenText = getTokenText(token);
+        
+        // Check for function macro first
+        if (functionMacros.find(tokenText) != functionMacros.end()) {
+          unsigned savedCursor = cursor;
+          skip_whitespace_and_comments();
+          
+          if (cursor < buffer.size() && buffer[cursor] == '(') {
+            std::string expanded = expandFunctionMacro(tokenText);
+            result << expanded;
+            continue;
+          } else {
+            cursor = savedCursor;
+          }
+        }
+        
+        // Check for object macro
+        if (macros.find(tokenText) != macros.end()) {
+          result << macros[tokenText];
+          continue;
+        }
+      }
+      
+      // Regular token
+      std::string tokenText = getTokenText(token);
+      result << tokenText;
+      
+      if (token.kind == TokenKind::Ident || token.kind == TokenKind::Number) {
+        result << " ";
+      }
+    }
+  }
+  
+  void skipConditionalBlock() {
+    int depth = 1;
+    
+    while (cursor < buffer.size() && depth > 0) {
+      Token token = next();
+      
+      if (token.kind == TokenKind::Hash) {
+        Token directive = next();
+        if (directive.kind == TokenKind::If) {
+          depth++;
+        } else if (directive.kind == TokenKind::Endif) {
+          depth--;
+        } else if (directive.kind == TokenKind::Else && depth == 1) {
+          return; // Found matching else
+        }
+      }
+    }
+  }
+  
+  bool findMatchingElse() {
+    unsigned savedCursor = cursor;
+    
+    // Look for #else at the same nesting level
+    while (cursor < buffer.size()) {
+      Token token = next();
+      
+      if (token.kind == TokenKind::Hash) {
+        Token directive = next();
+        if (directive.kind == TokenKind::Else) {
+          return true; // Found else
+        } else if (directive.kind == TokenKind::Endif) {
+          cursor = savedCursor;
+          return false; // Found endif without else
+        }
+      }
+    }
+    
+    cursor = savedCursor;
+    return false;
+  }
+  
+  void skipDirectiveLine() {
+    // Skip tokens until we hit EOF or newline
+    while (cursor < buffer.size()) {
+      Token token = next();
+      if (token.kind == TokenKind::T_EOF || token.kind == TokenKind::Unknown) {
+        break;
+      }
+    }
+  }
+  
+  std::string expandFunctionMacro(const std::string& macroName) {
+    // Check if next token is '('
+    skip_whitespace_and_comments();
+    if (cursor >= buffer.size() || buffer[cursor] != '(') {
+      // Not a function call, treat as identifier
+      return macroName;
+    }
+    
+    cursor++; // Skip '('
+    
+    // Parse arguments
+    std::vector<std::string> args;
+    std::string currentArg;
+    int parenDepth = 0;
+    
+    while (cursor < buffer.size()) {
+      char c = buffer[cursor];
+      
+      if (c == '(') {
+        parenDepth++;
+        currentArg += c;
+      } else if (c == ')') {
+        if (parenDepth == 0) {
+          // End of function call
+          if (!currentArg.empty()) {
+            args.push_back(currentArg);
+          }
+          cursor++; // Skip closing ')'
+          break;
+        } else {
+          parenDepth--;
+          currentArg += c;
+        }
+      } else if (c == ',' && parenDepth == 0) {
+        // Argument separator
+        args.push_back(currentArg);
+        currentArg.clear();
+      } else {
+        currentArg += c;
+      }
+      
+      cursor++;
+    }
+    
+    // Get the macro replacement text
+    if (macros.find(macroName) == macros.end()) {
+      return macroName; // Macro not found
+    }
+    
+    std::string replacement = macros[macroName];
+    
+    // Simple parameter substitution
+    if (functionMacros.find(macroName) != functionMacros.end()) {
+      const auto& params = functionMacros[macroName];
+      
+      for (size_t i = 0; i < params.size() && i < args.size(); i++) {
+        // Replace parameter with argument in replacement text
+        std::string param = params[i];
+        std::string arg = args[i];
+        
+        // Trim whitespace from argument
+        size_t start = arg.find_first_not_of(" \t");
+        size_t end = arg.find_last_not_of(" \t");
+        if (start != std::string::npos) {
+          arg = arg.substr(start, end - start + 1);
+        }
+        
+        // Simple string replacement
+        size_t pos = 0;
+        while ((pos = replacement.find(param, pos)) != std::string::npos) {
+          replacement.replace(pos, param.length(), arg);
+          pos += arg.length();
+        }
+      }
+    }
+    
+    return replacement;
   }
 };
