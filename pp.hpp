@@ -236,12 +236,12 @@ public:
       result << tokenText;
 
       // Add space after certain tokens for readability, but not before
-      // semicolons
+      // semicolons or when the next token starts with certain characters
       if ((token.kind == TokenKind::Ident || token.kind == TokenKind::Number ||
            token.kind == TokenKind::Assign || token.kind == TokenKind::Plus ||
            token.kind == TokenKind::Minus || token.kind == TokenKind::Star ||
            token.kind == TokenKind::Slash) &&
-          cursor < buffer.size() && buffer[cursor] != ';') {
+          cursor < buffer.size() && buffer[cursor] != ';' && buffer[cursor] != '(' && buffer[cursor] != ')') {
         result << " ";
       }
 
