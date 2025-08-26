@@ -429,22 +429,190 @@ private:
   }
 
   void handle_define() {
-    // TODO
+    Token name = next();
+    if (name.kind != TokenKind::Ident) {
+      throw std::runtime_error("Expected identifier after #define");
+    }
+
+    std::string macroName = get_token_text(name);
+
+    // Check if it's a function-like macro
+    if (cursor < buffer.size() && buffer[cursor] == '(') {
+      handle_function_macro(macroName);
+    } else {
+      handle_object_macro(macroName);
+    }
   }
 
   void handle_undef() {
-    // TODO
+    Token name = next();
+    if (name.kind != TokenKind::Ident) {
+      throw std::runtime_error("Expected identifier after #undef");
+    }
+
+    std::string macroName = get_token_text(name);
+    macros.erase(macroName);
+    functionMacros.erase(macroName);
   }
 
   void handle_if() {
-    // TODO: Implement conditional compilation
+    // For now, implement a simple version that evaluates constant expressions
+    // Skip to end of line and evaluate the condition
+    std::string condition = read_line();
+
+    // Simple evaluation - check if macro is defined or if it's a number != 0
+    bool result = evaluate_condition(condition);
+
+    if (!result) {
+      skip_until_else_or_endif();
+    }
   }
 
   void handle_else() {
-    // TODO: Implement conditional compilation
+    // Skip until #endif since we're in the else branch
+    skip_until_endif();
   }
 
   void handle_endif() {
-    // TODO: Implement conditional compilation
+    // Nothing to do - just marks the end of conditional block
+  }
+
+  // Helper functions
+  std::string get_token_text(const Token &token) {
+    return std::string(buffer.c_str() + token.begin, token.len);
+  }
+
+  void handle_object_macro(const std::string &macroName) {
+    skip_whitespace_and_comments();
+
+    // Read the replacement text until end of line
+    std::string replacement = read_line();
+    macros[macroName] = replacement;
+  }
+
+  void handle_function_macro(const std::string &macroName) {
+    // Skip the opening parenthesis
+    cursor++;
+
+    std::vector<std::string> parameters;
+
+    // Parse parameters
+    while (cursor < buffer.size()) {
+      skip_whitespace_and_comments();
+
+      if (cursor < buffer.size() && buffer[cursor] == ')') {
+        cursor++;
+        break;
+      }
+
+      Token param = next();
+      if (param.kind != TokenKind::Ident) {
+        throw std::runtime_error("Expected parameter name in function macro");
+      }
+
+      parameters.push_back(get_token_text(param));
+
+      skip_whitespace_and_comments();
+      if (cursor < buffer.size() && buffer[cursor] == ',') {
+        cursor++;
+      } else if (cursor < buffer.size() && buffer[cursor] == ')') {
+        cursor++;
+        break;
+      }
+    }
+
+    // Read the replacement text
+    std::string replacement = read_line();
+
+    // Store the function macro (simplified - just store replacement text)
+    functionMacros[macroName] = parameters;
+    macros[macroName] = replacement; // Store replacement text in macros map too
+  }
+
+  std::string read_line() {
+    std::string line;
+    while (cursor < buffer.size() && buffer[cursor] != '\n') {
+      line += buffer[cursor];
+      cursor++;
+    }
+    // Trim trailing whitespace
+    while (!line.empty() && std::isspace(line.back())) {
+      line.pop_back();
+    }
+    return line;
+  }
+
+  bool evaluate_condition(const std::string &condition) {
+    // Simple condition evaluation
+    std::string trimmed = condition;
+
+    // Remove leading/trailing whitespace
+    size_t start = trimmed.find_first_not_of(" \t");
+    if (start == std::string::npos)
+      return false;
+
+    size_t end = trimmed.find_last_not_of(" \t");
+    trimmed = trimmed.substr(start, end - start + 1);
+
+    // Check if it's a defined macro
+    if (macros.find(trimmed) != macros.end() ||
+        functionMacros.find(trimmed) != functionMacros.end()) {
+      return true;
+    }
+
+    // Check if it's a number
+    if (!trimmed.empty() && (std::isdigit(trimmed[0]) || trimmed[0] == '-')) {
+      try {
+        int value = std::stoi(trimmed);
+        return value != 0;
+      } catch (...) {
+        return false;
+      }
+    }
+
+    // Check for "defined(MACRO)" syntax
+    if (trimmed.find("defined(") == 0 && trimmed.back() == ')') {
+      std::string macroName = trimmed.substr(8, trimmed.length() - 9);
+      return macros.find(macroName) != macros.end() ||
+             functionMacros.find(macroName) != functionMacros.end();
+    }
+
+    return false;
+  }
+
+  void skip_until_else_or_endif() {
+    int depth = 1;
+
+    while (cursor < buffer.size() && depth > 0) {
+      Token token = next();
+
+      if (token.kind == TokenKind::Hash) {
+        Token directive = next();
+        if (directive.kind == TokenKind::If) {
+          depth++;
+        } else if (directive.kind == TokenKind::Endif) {
+          depth--;
+        } else if (directive.kind == TokenKind::Else && depth == 1) {
+          return; // Found matching else
+        }
+      }
+    }
+  }
+
+  void skip_until_endif() {
+    int depth = 1;
+
+    while (cursor < buffer.size() && depth > 0) {
+      Token token = next();
+
+      if (token.kind == TokenKind::Hash) {
+        Token directive = next();
+        if (directive.kind == TokenKind::If) {
+          depth++;
+        } else if (directive.kind == TokenKind::Endif) {
+          depth--;
+        }
+      }
+    }
   }
 };
