@@ -2,8 +2,6 @@
 
 #include <cassert>
 #include <cctype>
-#include <fstream>
-#include <iostream>
 #include <map>
 #include <sstream>
 #include <stdexcept>
@@ -239,7 +237,7 @@ public:
 
       // Add space after certain tokens for readability, but not before
       // semicolons or when the next token starts with certain characters
-      if ((token.kind == TokenKind::Ident || token.kind == TokenKind::Number ||
+      if ((token.kind == TokenKind::Ident || token.kind == TokenKind::PPNumber ||
            token.kind == TokenKind::Assign || token.kind == TokenKind::Plus ||
            token.kind == TokenKind::Minus || token.kind == TokenKind::Star ||
            token.kind == TokenKind::Slash) &&
@@ -300,12 +298,9 @@ public:
       return {start, cursor - start, TokenKind::Ident};
     }
 
-    // Number
-    if (std::isdigit(c)) {
-      while (cursor < buffer.size() && std::isdigit(buffer[cursor])) {
-        cursor++;
-      }
-      return {start, cursor - start, TokenKind::Number};
+    // PPNumber - C preprocessor number parsing
+    if (std::isdigit(c) || (c == '.' && cursor + 1 < buffer.size() && std::isdigit(buffer[cursor + 1]))) {
+      return parsePPNumber(start);
     }
 
     // String Literal
@@ -684,9 +679,23 @@ private:
 
     // Check if it's a number after expansion
     if (!expandedCondition.empty() &&
-        (std::isdigit(expandedCondition[0]) || expandedCondition[0] == '-')) {
+        (std::isdigit(expandedCondition[0]) || expandedCondition[0] == '-' || 
+         (expandedCondition.length() > 2 && expandedCondition[0] == '0' && 
+          (expandedCondition[1] == 'x' || expandedCondition[1] == 'X')))) {
       try {
-        int value = std::stoi(expandedCondition);
+        int value;
+        if (expandedCondition.length() > 2 && expandedCondition[0] == '0' && 
+            (expandedCondition[1] == 'x' || expandedCondition[1] == 'X')) {
+          // Hexadecimal number
+          value = std::stoi(expandedCondition, nullptr, 16);
+        } else if (expandedCondition[0] == '0' && expandedCondition.length() > 1 && 
+                   std::isdigit(expandedCondition[1])) {
+          // Octal number
+          value = std::stoi(expandedCondition, nullptr, 8);
+        } else {
+          // Decimal number
+          value = std::stoi(expandedCondition, nullptr, 10);
+        }
         return value != 0;
       } catch (...) {
         return false;
@@ -836,7 +845,7 @@ private:
       result << tokenText;
 
       // Add space after certain tokens for readability
-      if ((token.kind == TokenKind::Ident || token.kind == TokenKind::Number ||
+      if ((token.kind == TokenKind::Ident || token.kind == TokenKind::PPNumber ||
            token.kind == TokenKind::Assign || token.kind == TokenKind::Plus ||
            token.kind == TokenKind::Minus || token.kind == TokenKind::Star ||
            token.kind == TokenKind::Slash) &&
@@ -901,6 +910,56 @@ private:
         break;
       }
     }
+  }
+
+  // Parse a preprocessor number according to C standard
+  Token parsePPNumber(unsigned start) {
+    // PPNumber grammar (simplified):
+    // digit
+    // . digit
+    // ppnumber digit
+    // ppnumber identifier-nondigit
+    // ppnumber e sign
+    // ppnumber E sign
+    // ppnumber p sign
+    // ppnumber P sign
+    // ppnumber .
+    
+    while (cursor < buffer.size()) {
+      char c = buffer[cursor];
+      
+      // Digits are always valid
+      if (std::isdigit(c)) {
+        cursor++;
+        continue;
+      }
+      
+      // Letters are valid (for hex, scientific notation, suffixes)
+      if (std::isalpha(c)) {
+        cursor++;
+        continue;
+      }
+      
+      // Dot is valid
+      if (c == '.') {
+        cursor++;
+        continue;
+      }
+      
+      // Handle exponent signs (e+, e-, E+, E-, p+, p-, P+, P-)
+      if ((c == '+' || c == '-') && cursor > start) {
+        char prev = buffer[cursor - 1];
+        if (prev == 'e' || prev == 'E' || prev == 'p' || prev == 'P') {
+          cursor++;
+          continue;
+        }
+      }
+      
+      // If none of the above, we've reached the end of the ppnumber
+      break;
+    }
+    
+    return {start, cursor - start, TokenKind::PPNumber};
   }
 
   std::string expandMacrosInCondition(const std::string &condition) {
