@@ -9,6 +9,177 @@
 #include <string_view>
 #include <vector>
 
+/*
+
+
+preprocessing-file:
+    groupopt
+(6.10) group:
+            group-part
+            group group-part
+(6.10) group-part:
+            if-section
+            control-line
+            text-line
+            # non-directive
+(6.10) if-section:
+            if-group elif-groupsopt else-groupopt endif-line
+(6.10) if-group:
+            # if constant-expression new-line groupopt
+            # ifdef identifier new-line groupopt
+            # ifndef identifier new-line groupopt
+ 
+elif-groups:
+        elif-group
+        elif-groups elif-group
+(6.10) elif-group:
+            # elif constant-expression new-line groupopt
+(6.10) else-group:
+            # else new-line groupopt
+(6.10) endif-line:
+            # endif new-line
+(6.10) control-line:
+            # include pp-tokens new-line
+            # define identifier replacement-list new-line
+            # define identifier lparen identifier-listopt )
+                                            replacement-list new-line
+            # define identifier lparen ... ) replacement-list new-line
+            # define identifier lparen identifier-list , ... )
+                                            replacement-list new-line
+            # undef identifier new-line
+            # line pp-tokens new-line
+            # error pp-tokensopt new-line
+            # pragma pp-tokensopt new-line
+            # new-line
+
+text-line:
+        pp-tokensopt new-line
+non-directive:
+        pp-tokens new-line
+
+lparen:
+        a ( character not immediately preceded by white-space
+
+replacement-list:
+        pp-tokensopt
+pp-tokens:
+        preprocessing-token
+        pp-tokens preprocessing-token
+new-line:
+        the new-line character
+ 
+preprocessing-token:
+    header-name
+    identifier
+    pp-number
+    character-constant
+    string-literal
+    punctuator
+    each non-white-space character that cannot be one of the above
+
+
+header-name:
+    < h-char-sequence >
+    " q-char-sequence "
+(6.4.7) h-char-sequence:
+            h-char
+            h-char-sequence h-char
+(6.4.7) h-char:
+            any member of the source character set except
+            the new-line character and >
+(6.4.7) q-char-sequence:
+            q-char
+            q-char-sequence q-char
+(6.4.7) q-char:
+            any member of the source character set except
+            the new-line character and "
+
+identifier:
+    identifier-nondigit
+    identifier identifier-nondigit
+    identifier digit
+
+identifier-nondigit:
+    nondigit
+    universal-character-name
+    other implementation-defined characters
+nondigit: one of
+    _ a b c d e f g h i j k l m 
+    n o p q r s t u v w x y z 
+    A B C D E F G H I J K L M 
+    N O P Q R S T U V W X Y Z 
+digit: one of
+    0 1 2 3 4 5 6 7 8 9
+
+universal-character-name:
+    \u hex-quad
+    \U hex-quad hex-quad
+hex-quad:
+    hexadecimal-digit hexadecimal-digit
+    hexadecimal-digit hexadecimal-digit
+
+hexadecimal-digit: one of
+    0 1 2 3 4 5 6 7 8 9 
+    a b c d e f 
+    A B C D E F
+
+
+
+pp-number:
+    digit
+    . digit
+    pp-number digit
+    pp-number identifier-nondigit
+    pp-number e sign
+    pp-number E sign
+    pp-number p sign
+    pp-number P sign
+    pp-number .
+
+character-constant:
+    ' c-char-sequence '
+    L' c-char-sequence '
+
+c-char-sequence:
+    c-char
+    c-char-sequence c-char
+(6.4.4.4) c-char:
+    any member of the source character set except the single-quote ', backslash \, or new-line character
+    escape-sequence
+(6.4.4.4) escape-sequence:
+        simple-escape-sequence
+        octal-escape-sequence
+        hexadecimal-escape-sequence
+        universal-character-name
+(6.4.4.4) simple-escape-sequence: one of
+                \'  \"  \?  \\
+                \a  \b  \f  \n  \r  \t  \v
+(6.4.4.4) octal-escape-sequence:
+            \ octal-digit
+            \ octal-digit octal-digit
+            \ octal-digit octal-digit octal-digit
+(6.4.4.4) hexadecimal-escape-sequence:
+            \x hexadecimal-digit
+            hexadecimal-escape-sequence hexadecimal-digit
+
+octal-digit: one of
+    0 1 2 3 4 5 6 7
+
+
+punctuator: one of
+    [ ] ( ) { } . -> 
+    ++  --  &  *  +  -  ~  !
+    / % << >> < > <= >= == != ^ | && || 
+    ? : ; ... 
+    = *= /= %= += -= <<=  >>=  &=  ^=  |=
+    , # ## 
+    <:  :>  <%  %>  %:  %:%:
+
+*/
+
+
+
+
 // TokenKind: Represents the type of tokens in the preprocessor
 enum class TokenKind {
   T_EOF = -1,
