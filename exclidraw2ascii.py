@@ -118,6 +118,16 @@ class ASCIICanvas:
         # 简化的箭头绘制 - 只在终点放置箭头字符
         self.set_char(x2, y2, arrow_char)
     
+    def draw_text(self, x: int, y: int, text: str):
+        """绘制文本"""
+        if not text:
+            return
+        
+        lines = text.split('\n')
+        for line_idx, line in enumerate(lines):
+            for char_idx, char in enumerate(line):
+                self.set_char(x + char_idx, y + line_idx, char)
+    
     def to_string(self) -> str:
         """将画布转换为字符串"""
         return '\n'.join(''.join(row) for row in self.canvas)
@@ -267,6 +277,11 @@ class ExclidrawConverter:
                 start_x, start_y = self.convert_coordinates(x + points[0][0], y + points[0][1], min_x, min_y, scale_x, scale_y)
                 end_x, end_y = self.convert_coordinates(x + points[-1][0], y + points[-1][1], min_x, min_y, scale_x, scale_y)
                 canvas.draw_arrow(start_x, start_y, end_x, end_y)
+        
+        elif element_type == 'text':
+            text_content = element.get('text', '')
+            if text_content:
+                canvas.draw_text(canvas_x, canvas_y, text_content)
 
 
 def main():
