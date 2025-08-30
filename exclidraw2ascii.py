@@ -125,7 +125,9 @@ class ExclidrawConverter:
     """Exclidraw转换器"""
     
     def __init__(self):
-        self.scale_factor = 0.1  # 缩放因子
+        self.target_width = 120  # 目标画布宽度
+        self.target_height = 60  # 目标画布高度
+        self.min_size = 3  # 最小尺寸
     
     def load_exclidraw(self, filename: str) -> Dict[str, Any]:
         """加载Exclidraw JSON文件"""
@@ -139,7 +141,7 @@ class ExclidrawConverter:
             print(f"错误: {filename} 不是有效的JSON文件")
             sys.exit(1)
     
-    def calculate_bounds(self, elements: List[Dict[str, Any]]) -> Tuple[int, int, int, int]:
+    def calculate_bounds(self, elements: List[Dict[str, Any]]) -> Tuple[float, float, float, float]:
         """计算所有元素的边界"""
         if not elements:
             return 0, 0, 100, 50
@@ -153,16 +155,45 @@ class ExclidrawConverter:
             width = element.get('width', 0)
             height = element.get('height', 0)
             
-            min_x = min(min_x, x)
-            min_y = min(min_y, y)
-            max_x = max(max_x, x + width)
-            max_y = max(max_y, y + height)
+            # 处理线条和箭头的特殊情况
+            if element.get('type') in ['line', 'arrow']:
+                points = element.get('points', [])
+                for point in points:
+                    px, py = x + point[0], y + point[1]
+                    min_x = min(min_x, px)
+                    min_y = min(min_y, py)
+                    max_x = max(max_x, px)
+                    max_y = max(max_y, py)
+            else:
+                min_x = min(min_x, x)
+                min_y = min(min_y, y)
+                max_x = max(max_x, x + width)
+                max_y = max(max_y, y + height)
         
-        return int(min_x), int(min_y), int(max_x), int(max_y)
+        return min_x, min_y, max_x, max_y
     
-    def convert_coordinates(self, x: float, y: float, offset_x: int, offset_y: int) -> Tuple[int, int]:
+    def calculate_scale_factors(self, min_x: float, min_y: float, max_x: float, max_y: float) -> Tuple[float, float]:
+        """计算缩放因子"""
+        content_width = max_x - min_x
+        content_height = max_y - min_y
+        
+        if content_width == 0 or content_height == 0:
+            return 0.1, 0.1
+        
+        # 计算缩放因子，保持宽高比
+        scale_x = (self.target_width - 10) / content_width
+        scale_y = (self.target_height - 10) / content_height
+        
+        # 使用较小的缩放因子以保持宽高比
+        scale = min(scale_x, scale_y, 0.2)  # 限制最大缩放因子
+        
+        return scale, scale
+    
+    def convert_coordinates(self, x: float, y: float, min_x: float, min_y: float, scale_x: float, scale_y: float) -> Tuple[int, int]:
         """转换坐标系"""
-        return int((x - offset_x) * self.scale_factor), int((y - offset_y) * self.scale_factor)
+        canvas_x = int((x - min_x) * scale_x) + 2  # 添加边距
+        canvas_y = int((y - min_y) * scale_y) + 2  # 添加边距
+        return canvas_x, canvas_y
     
     def convert_to_ascii(self, data: Dict[str, Any]) -> str:
         """将Exclidraw数据转换为ASCII"""
@@ -174,18 +205,26 @@ class ExclidrawConverter:
         # 计算边界
         min_x, min_y, max_x, max_y = self.calculate_bounds(elements)
         
-        # 创建画布
-        canvas_width = int((max_x - min_x) * self.scale_factor) + 10
-        canvas_height = int((max_y - min_y) * self.scale_factor) + 10
+        # 计算缩放因子
+        scale_x, scale_y = self.calculate_scale_factors(min_x, min_y, max_x, max_y)
+        
+        # 计算实际画布大小
+        canvas_width = int((max_x - min_x) * scale_x) + 10
+        canvas_height = int((max_y - min_y) * scale_y) + 10
+        
+        # 限制画布大小
+        canvas_width = min(canvas_width, self.target_width)
+        canvas_height = min(canvas_height, self.target_height)
+        
         canvas = ASCIICanvas(canvas_width, canvas_height)
         
         # 绘制每个元素
         for element in elements:
-            self.draw_element(canvas, element, min_x, min_y)
+            self.draw_element(canvas, element, min_x, min_y, scale_x, scale_y)
         
         return canvas.to_string()
     
-    def draw_element(self, canvas: ASCIICanvas, element: Dict[str, Any], offset_x: int, offset_y: int):
+    def draw_element(self, canvas: ASCIICanvas, element: Dict[str, Any], min_x: float, min_y: float, scale_x: float, scale_y: float):
         """绘制单个元素"""
         element_type = element.get('type', '')
         x = element.get('x', 0)
@@ -194,12 +233,12 @@ class ExclidrawConverter:
         height = element.get('height', 0)
         
         # 转换坐标
-        canvas_x, canvas_y = self.convert_coordinates(x, y, offset_x, offset_y)
-        canvas_width = int(width * self.scale_factor)
-        canvas_height = int(height * self.scale_factor)
+        canvas_x, canvas_y = self.convert_coordinates(x, y, min_x, min_y, scale_x, scale_y)
+        canvas_width = max(int(width * scale_x), self.min_size)
+        canvas_height = max(int(height * scale_y), self.min_size)
         
         if element_type == 'rectangle':
-            canvas.draw_rectangle(canvas_x, canvas_y, max(canvas_width, 3), max(canvas_height, 3))
+            canvas.draw_rectangle(canvas_x, canvas_y, canvas_width, canvas_height)
         
         elif element_type == 'ellipse':
             rx = max(canvas_width // 2, 2)
@@ -211,20 +250,20 @@ class ExclidrawConverter:
         elif element_type == 'diamond':
             cx = canvas_x + canvas_width // 2
             cy = canvas_y + canvas_height // 2
-            canvas.draw_diamond(cx, cy, max(canvas_width, 5), max(canvas_height, 5))
+            canvas.draw_diamond(cx, cy, canvas_width, canvas_height)
         
         elif element_type == 'line':
             points = element.get('points', [])
             if len(points) >= 2:
-                start_x, start_y = self.convert_coordinates(x + points[0][0], y + points[0][1], offset_x, offset_y)
-                end_x, end_y = self.convert_coordinates(x + points[-1][0], y + points[-1][1], offset_x, offset_y)
+                start_x, start_y = self.convert_coordinates(x + points[0][0], y + points[0][1], min_x, min_y, scale_x, scale_y)
+                end_x, end_y = self.convert_coordinates(x + points[-1][0], y + points[-1][1], min_x, min_y, scale_x, scale_y)
                 canvas.draw_line(start_x, start_y, end_x, end_y, '-')
         
         elif element_type == 'arrow':
             points = element.get('points', [])
             if len(points) >= 2:
-                start_x, start_y = self.convert_coordinates(x + points[0][0], y + points[0][1], offset_x, offset_y)
-                end_x, end_y = self.convert_coordinates(x + points[-1][0], y + points[-1][1], offset_x, offset_y)
+                start_x, start_y = self.convert_coordinates(x + points[0][0], y + points[0][1], min_x, min_y, scale_x, scale_y)
+                end_x, end_y = self.convert_coordinates(x + points[-1][0], y + points[-1][1], min_x, min_y, scale_x, scale_y)
                 canvas.draw_arrow(start_x, start_y, end_x, end_y)
 
 
