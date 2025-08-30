@@ -24,10 +24,25 @@ class ASCIICanvas:
         if 0 <= x < self.width and 0 <= y < self.height:
             self.canvas[y][x] = char
     
-    def draw_line(self, x1: int, y1: int, x2: int, y2: int, char: str = '*'):
-        """使用Bresenham算法绘制直线"""
-        dx = abs(x2 - x1)
-        dy = abs(y2 - y1)
+    def draw_line(self, x1: int, y1: int, x2: int, y2: int, char: str = None):
+        """使用Bresenham算法绘制直线，根据方向自动选择字符"""
+        dx = x2 - x1
+        dy = y2 - y1
+        
+        # 如果没有指定字符，根据方向自动选择
+        if char is None:
+            if abs(dx) < 2:  # 垂直线 (same x)
+                char = '|'
+            elif abs(dy) < 2:  # 水平线 (same y)
+                char = '-'
+            elif (dx > 0 and dy > 0) or (dx < 0 and dy < 0):  # 正斜率
+                char = '\\'
+            else:  # 负斜率
+                char = '/'
+        
+        # Bresenham算法
+        dx = abs(dx)
+        dy = abs(dy)
         sx = 1 if x1 < x2 else -1
         sy = 1 if y1 < y2 else -1
         err = dx - dy
@@ -83,38 +98,25 @@ class ASCIICanvas:
     
     def draw_arrow(self, x1: int, y1: int, x2: int, y2: int):
         """绘制有向线段（箭头）"""
-        # 绘制主线
-        self.draw_line(x1, y1, x2, y2, '-')
+        # 绘制主线，使用智能字符选择
+        self.draw_line(x1, y1, x2, y2)
         
-        # 计算箭头方向
+        # 计算箭头方向和箭头字符
         dx = x2 - x1
         dy = y2 - y1
-        length = math.sqrt(dx*dx + dy*dy)
         
-        if length > 0:
-            # 标准化方向向量
-            dx /= length
-            dy /= length
-            
-            # 箭头长度
-            arrow_len = 3
-            
-            # 箭头角度（30度）
-            cos30 = math.cos(math.radians(30))
-            sin30 = math.sin(math.radians(30))
-            
-            # 计算箭头两个分支的终点
-            ax1 = x2 - arrow_len * (dx * cos30 - dy * sin30)
-            ay1 = y2 - arrow_len * (dx * sin30 + dy * cos30)
-            ax2 = x2 - arrow_len * (dx * cos30 + dy * sin30)
-            ay2 = y2 - arrow_len * (dy * cos30 - dx * sin30)
-            
-            # 绘制箭头
-            self.draw_line(x2, y2, int(ax1), int(ay1), '>')
-            self.draw_line(x2, y2, int(ax2), int(ay2), '>')
-            
-        # 箭头头部
-        self.set_char(x2, y2, '>')
+        # 根据方向选择箭头字符
+        if abs(dx) < 2:  # 垂直箭头
+            arrow_char = '^' if dy < 0 else 'v'
+        elif abs(dy) < 2:  # 水平箭头
+            arrow_char = '<' if dx < 0 else '>'
+        elif (dx > 0 and dy > 0) or (dx < 0 and dy < 0):  # 正斜率
+            arrow_char = '>' if dx > 0 else '<'
+        else:  # 负斜率
+            arrow_char = '>' if dx > 0 else '<'
+        
+        # 简化的箭头绘制 - 只在终点放置箭头字符
+        self.set_char(x2, y2, arrow_char)
     
     def to_string(self) -> str:
         """将画布转换为字符串"""
@@ -257,7 +259,7 @@ class ExclidrawConverter:
             if len(points) >= 2:
                 start_x, start_y = self.convert_coordinates(x + points[0][0], y + points[0][1], min_x, min_y, scale_x, scale_y)
                 end_x, end_y = self.convert_coordinates(x + points[-1][0], y + points[-1][1], min_x, min_y, scale_x, scale_y)
-                canvas.draw_line(start_x, start_y, end_x, end_y, '-')
+                canvas.draw_line(start_x, start_y, end_x, end_y)  # 使用自动字符选择
         
         elif element_type == 'arrow':
             points = element.get('points', [])
