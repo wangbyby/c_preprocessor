@@ -137,8 +137,8 @@ class ExclidrawConverter:
     """Exclidraw转换器"""
     
     def __init__(self):
-        self.target_width = 120  # 目标画布宽度
-        self.target_height = 60  # 目标画布高度
+        self.target_width = 200  # 目标画布宽度 - 增大以适应复杂图形
+        self.target_height = 150  # 目标画布高度 - 增大以适应复杂图形
         self.min_size = 3  # 最小尺寸
     
     def load_exclidraw(self, filename: str) -> Dict[str, Any]:
@@ -192,12 +192,18 @@ class ExclidrawConverter:
         if content_width == 0 or content_height == 0:
             return 0.1, 0.1
         
-        # 计算缩放因子，保持宽高比
-        scale_x = (self.target_width - 10) / content_width
-        scale_y = (self.target_height - 10) / content_height
+        # 使用固定的缩放因子，而不是自适应缩放
+        # 这样可以保持元素的相对大小关系
+        base_scale = 0.1  # 基础缩放因子：10个像素 = 1个字符
         
-        # 使用较小的缩放因子以保持宽高比
-        scale = min(scale_x, scale_y, 0.2)  # 限制最大缩放因子
+        # 如果内容太大，适当缩小
+        if content_width * base_scale > self.target_width - 10:
+            base_scale = (self.target_width - 10) / content_width
+        if content_height * base_scale > self.target_height - 10:
+            base_scale = min(base_scale, (self.target_height - 10) / content_height)
+        
+        # 确保缩放因子在合理范围内
+        scale = max(min(base_scale, 0.2), 0.01)
         
         return scale, scale
     
@@ -213,6 +219,11 @@ class ExclidrawConverter:
         
         if not elements:
             return "没有找到可绘制的元素"
+        
+        # 对于非常复杂的图形，限制处理的元素数量或区域
+        if len(elements) > 100:
+            # 尝试找到主要的元素群组
+            elements = self.filter_main_elements(elements)
         
         # 计算边界
         min_x, min_y, max_x, max_y = self.calculate_bounds(elements)
@@ -235,6 +246,41 @@ class ExclidrawConverter:
             self.draw_element(canvas, element, min_x, min_y, scale_x, scale_y)
         
         return canvas.to_string()
+    
+    def filter_main_elements(self, elements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """过滤出主要元素，用于处理复杂图形"""
+        # 找到元素密度最高的区域
+        rectangles = [e for e in elements if e.get('type') == 'rectangle']
+        
+        if not rectangles:
+            return elements[:50]  # 如果没有矩形，只取前50个元素
+        
+        # 按y坐标分组，找到元素最多的区域
+        y_groups = {}
+        for rect in rectangles:
+            y = rect.get('y', 0)
+            y_group = int(y // 1000) * 1000  # 按1000像素分组
+            if y_group not in y_groups:
+                y_groups[y_group] = []
+            y_groups[y_group].append(rect)
+        
+        # 找到最大的组
+        if not y_groups:
+            return elements[:50]
+        
+        main_y_group = max(y_groups.keys(), key=lambda k: len(y_groups[k]))
+        
+        # 获取该区域的所有元素
+        main_elements = []
+        y_min = main_y_group - 500
+        y_max = main_y_group + 1500
+        
+        for element in elements:
+            y = element.get('y', 0)
+            if y_min <= y <= y_max:
+                main_elements.append(element)
+        
+        return main_elements[:100]  # 限制最多100个元素
     
     def draw_element(self, canvas: ASCIICanvas, element: Dict[str, Any], min_x: float, min_y: float, scale_x: float, scale_y: float):
         """绘制单个元素"""
@@ -281,7 +327,24 @@ class ExclidrawConverter:
         elif element_type == 'text':
             text_content = element.get('text', '')
             if text_content:
-                canvas.draw_text(canvas_x, canvas_y, text_content)
+                # 处理文本对齐
+                text_align = element.get('textAlign', 'left')
+                vertical_align = element.get('verticalAlign', 'top')
+                
+                # 如果文本有容器ID，尝试居中对齐
+                container_id = element.get('containerId')
+                if container_id and text_align == 'center' and vertical_align == 'middle':
+                    # 简单的居中处理 - 在矩形中心显示文本
+                    text_lines = text_content.split('\n')
+                    text_width = max(len(line) for line in text_lines) if text_lines else 0
+                    text_height = len(text_lines)
+                    
+                    # 调整位置使文本居中
+                    center_x = canvas_x + canvas_width // 2 - text_width // 2
+                    center_y = canvas_y + canvas_height // 2 - text_height // 2
+                    canvas.draw_text(max(0, center_x), max(0, center_y), text_content)
+                else:
+                    canvas.draw_text(canvas_x, canvas_y, text_content)
 
 
 def main():
