@@ -95,6 +95,15 @@ class Graph:
     edges: List["Edge"] = field(default_factory=list)
     edge_set = set()
 
+    def add_sub_graph(self, g: Union["Graph", List["Graph"]]):
+        if isinstance(g, list):
+            for sub in g:
+                self.children.append(sub)
+                sub.parent = self
+        else:
+            self.children.append(g)
+            g.parent = self
+
     def add_node(self, node: Union[Node, List[Node]]):
         if isinstance(node, list):  # 如果是列表，逐个添加节点
             for n in node:
@@ -462,20 +471,13 @@ class Parser:
 
             src_list = dst_nodes
 
-    def parse(meriad: str) -> bool:
+    def parse(self, meriad: str) -> bool:
 
         lines = meriad.strip().split("\n")
 
-        graph_roots = []
-
-        line_it = iter(lines)
-
-        while True:
-            line = next(line_it, None)
-            if line is None:
-                break
+        for line in lines:
             line = line.strip()
-            if line.startswith("%%"):
+            if len(line) == 0 or line.startswith("%%"):
                 continue
 
             l = Lexer()
@@ -485,38 +487,42 @@ class Parser:
             if len(tokens) == 0:
                 continue
 
-            it = iter(tokens)
+            cur = 0
+            token = tokens[cur]
 
-            if next(it).type == TokenType.GRAPH:
+            if token.type == TokenType.GRAPH:
                 root = Graph(id="root", parent=None)
-                graph_roots.append(root)
 
-                dir_token = next(it)
+                cur += 1
+                token = tokens[cur] if cur < len(tokens) else None
+
+                if token is None:
+                    root.dir = Direction.TD
+                    break
+
                 if (
-                    dir_token.type == TokenType.TEXT
-                    and dir_token.content in Direction.__members__
+                    token.type == TokenType.TEXT
+                    and token.content in Direction.__members__
                 ):
-                    root.dir = Direction[dir_token.content]
+                    root.dir = Direction[token.content]
                 else:
-                    raise ValueError(f"Invalid graph direction: {dir_token.content}")
+                    raise ValueError(f"Invalid graph direction: {token.content}")
 
                 # drop the rest tokens if this line
 
                 continue
 
-            if next(it).type == TokenType.SUBGRAPH:
-                subgraph_token = next(it)
-                if subgraph_token.type == TokenType.TEXT:
-                    subgraph_id = subgraph_token.content
-                    subgraph = Graph(id=subgraph_id, parent=graph_roots[-1])
-                    graph_roots[-1].children.append(subgraph)
-                else:
-                    raise ValueError(f"Invalid subgraph id: {subgraph_token.content}")
+            if token.type == TokenType.SUBGRAPH:
+                cur += 1
+                token = tokens[cur] if cur < len(tokens) else None
+                subgraph_id = ""
+                if token is not None and token.type == TokenType.TEXT:
+                    subgraph_id = token.content
+
+                subgraph = Graph(id=subgraph_id, parent=self.graph_roots[-1])
+                self.graph_roots[-1].add_sub_graph(subgraph)
 
                 # drop the rest tokens in this line
-
-                # parse graph content
-
                 continue
 
 
