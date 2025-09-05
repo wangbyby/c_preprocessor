@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 import re
-from typing import Dict, List, Tuple, Set
+from typing import Dict, List, Tuple, Set, Generic, TypeVar
 from collections import defaultdict
 
 
@@ -32,15 +32,38 @@ class LineType(Enum):
     DASHED = "DASHED"  # -.--, -.->
     BOLD = "BOLD"  # ===, ==>
 
+    @staticmethod
+    def from_str(s: str) -> "LineType":
+        if "=" in s:
+            return LineType.BOLD
+        if "." in s:
+            return LineType.DASHED
+        return LineType.SOLID
+
 
 @dataclass
 class Line:
     type: LineType
     src_arrow: bool  # <---
     dst_arrow: bool  # -->
-    inline_label: bool  # means label is line --label--> or upper
-    label: str = ""  # --label--> , -->|label|
+    inline_label: str = ""  # means label is line --label--> or upper
+    hangoff_label: str = ""  #  -->|label|
     line_len: int = 1  # ---> vs ------>
+
+    @staticmethod
+    def from_style(style: str, l1: str = "", l2: str = "") -> "Line":
+        line_type = LineType.from_str(style)
+        src_arrow = style.startswith("<")
+        dst_arrow = style.endswith(">")
+        line_len = len(style) - (1 if src_arrow else 0) - (1 if dst_arrow else 0)
+        return Line(
+            type=line_type,
+            src_arrow=src_arrow,
+            dst_arrow=dst_arrow,
+            inline_label=l1,
+            hangoff_label=l2,
+            line_len=line_len,
+        )
 
 
 @dataclass
@@ -69,6 +92,9 @@ class Graph:
     nodes = []
     edges = []
 
+
+    def add_node(self, node: Node):
+        self.nodes.append(node)
 
 class TokenType(Enum):
     TEXT = "TEXT"
@@ -155,12 +181,28 @@ class Lexer:
                 self.tokens.append(Token(text[start:cur], TokenType.TEXT))
 
 
+T = TypeVar("T")
+
+
+class Iterator(Generic[T]):
+    def __init__(self, items: List[T] = []):
+        self.list = items
+        self.index = 0
+
+    def next(self) -> T:
+        if self.index >= len(self.list):
+            return None
+        item = self.list[self.index]
+        self.index += 1
+        return item
+
+
 class Parser:
     def __init__(self):
         self.graph_roots: List[Graph] = []
 
     def parse_node(self, tokens: List[Token], cur: int) -> Tuple[int, Node]:
-        token =  tokens[cur] if cur < len(tokens) else None
+        token = tokens[cur] if cur < len(tokens) else None
         if token is None:
             return cur, None
         if token.type != TokenType.TEXT:
@@ -170,20 +212,20 @@ class Parser:
         shape = NodeShape.RECT
 
         cur += 1
-    
+
         token: Token = tokens[cur] if cur < len(tokens) else None
-         
+
         if token is None:
             return Node(id=node_id, label="", shape=shape)
 
         if token.type == TokenType.L_PAREN:
 
             count = 1
-            tmp_it =  cur
+            tmp_it = cur
             while True:
                 tmp_it += 1
                 token = tokens[tmp_it] if tmp_it < len(tokens) else None
-                
+
                 if token is None:
                     break
                 if token.type == TokenType.L_PAREN:
@@ -202,17 +244,17 @@ class Parser:
 
             cur += 1
             token = tokens[cur] if cur < len(tokens) else None
-            
+
             if token is None:
                 raise ValueError(f"Invalid node shape for node {node_id}")
             if token.type != TokenType.TEXT:
                 raise ValueError(f"Invalid node shape for node {node_id}")
             node_label = token.content
-           
+
             for _ in range(count):
                 cur += 1
                 token = tokens[cur] if cur < len(tokens) else None
-                
+
                 if token is None or token.type != TokenType.R_PAREN:
                     raise ValueError(f"Invalid node shape for node {node_id}")
             return Node(id=node_id, label=node_label, shape=shape)
@@ -237,7 +279,7 @@ class Parser:
                 raise ValueError(f"Invalid node shape for node {node_id}")
             if token.type == TokenType.TEXT:
                 node_label = token.content
-                
+
                 cur += 1
                 token = tokens[cur] if cur < len(tokens) else None
 
@@ -281,7 +323,7 @@ class Parser:
 
         if token.type == TokenType.LEFT:  # <]
             shape = NodeShape.AsymmetricShapeLeft
-            
+
             cur += 1
             token = tokens[cur] if cur < len(tokens) else None
             if token is None:
@@ -302,14 +344,14 @@ class Parser:
                 raise ValueError(f"Invalid node shape for node {node_id}")
             if token.type == TokenType.TEXT:
                 node_label = token.content
-                
+
                 cur += 1
                 token = tokens[cur] if cur < len(tokens) else None
             if token is None or token.type != TokenType.R_BRACKET:
                 raise ValueError(f"Invalid node shape for node {node_id}")
             return Node(id=node_id, label=node_label, shape=shape)
 
-    def parse_node_list(self, tokens: List[Token], cur:int):
+    def parse_node_list(self, tokens: List[Token], cur: int):
         nodes = []
         while True:
             cur, node = self.parse_node(tokens, cur)
@@ -317,27 +359,77 @@ class Parser:
                 break
             nodes.append(node)
 
-            cur +=1
+            cur += 1
             token = tokens[cur] if cur < len(tokens) else None
-            
-            if token is None or token.type != TokenType.AND:
-                pass
+            if token is not None and token.type == TokenType.AND:
+                cur += 1
+        return cur, nodes
 
-    def parse_graph_content(self, it):
+    # -->|选项1| in Decision -->|选项1| Action1[动作1]
+    def pares_edge(self, tokens: List[Token], cur: int):
+        token = tokens[cur] if cur < len(tokens) else None
+        if token is None or token.type != TokenType.LINE:
+            return cur, None
+
+        line_style = token.content
+        line_label = ""
+
+        tmp = cur
+
+        cur += 1
+        token = tokens[cur] if cur < len(tokens) else None
+
+        if token is not None and token.type == TokenType.TEXT:
+            line_label = token.content
+            cur += 1
+            token = tokens[cur] if cur < len(tokens) else None
+
+            if token is not None and token.type == TokenType.LINE:
+                cur += 1
+                token = tokens[cur] if cur < len(tokens) else None
+            else:
+                # line end
+                return tmp, Line.from_style(line_style, line_label, "")
+
+        if token is not None and token.type == TokenType.LABEL:
+            cur += 1
+            token = tokens[cur] if cur < len(tokens) else None
+
+            line_label_hangoff = (
+                token.content
+                if token is not None and token.type == TokenType.TEXT
+                else ""
+            )
+
+            cur += 1
+            token = tokens[cur] if cur < len(tokens) else None
+            if token is not None and token.type == TokenType.LABEL:
+                pass
+            else:
+                raise ValueError(f"Invalid line label at {tmp}")
+
+        return cur, Line.from_style(line_style, line_label, line_label_hangoff)
+
+    def parse_one_src_line_content(self, tokens: List[Token]):
+        cur = 0
         while True:
-            line = next(it, None)
+            token = tokens[cur] if cur < len(tokens) else None
+
+            if token is None:
+                break
+
+            cur, nodes = self.parse_node_list(tokens, cur)
+            if len(nodes) == 0:
+                break
+
+            cur , line = self.pares_edge(tokens, cur)
             if line is None:
                 break
-            line = line.strip()
-            if line.startswith("%%"):
-                continue
+            
+            cur, dst_nodes = self.parse_node_list(tokens, cur)
+            if len(dst_nodes) == 0:
+                break
 
-            l = Lexer()
-            l.run(line)
-            tokens = l.tokens
-            if len(tokens) == 0:
-                continue
-            token_it = iter(tokens)
             # parse nodes and edges
 
     def parse(meriad: str) -> bool:
@@ -420,4 +512,3 @@ graph TB
 """
 
 parse(test1)
-
