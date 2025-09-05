@@ -5,7 +5,6 @@ Pydot Graph to ASCII converter
 将 pydot 图形转换为 ASCII 字符图形
 """
 
-import pydot
 from typing import Dict, List, Tuple, Set
 import re
 
