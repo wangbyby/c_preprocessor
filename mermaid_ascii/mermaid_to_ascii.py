@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 import re
-from typing import Dict, List, Tuple, Set, Generic, TypeVar
+from typing import Dict, List, Tuple, Set, Generic, TypeVar, Union
 from collections import defaultdict
 
 
@@ -78,7 +78,6 @@ class Edge:
     src: Node
     dst: Node
     edge: Line
-    label: str = ""
 
 
 @dataclass
@@ -89,12 +88,36 @@ class Graph:
     children: List["Graph"] = field(default_factory=list)
 
     dir = None
-    nodes = []
-    edges = []
 
+    nodes: List["Node"] = field(default_factory=list)
+    node_set = set()
 
-    def add_node(self, node: Node):
-        self.nodes.append(node)
+    edges: List["Edge"] = field(default_factory=list)
+    edge_set = set()
+
+    def add_node(self, node: Union[Node, List[Node]]):
+        if isinstance(node, list):  # 如果是列表，逐个添加节点
+            for n in node:
+                if n not in self.node_set:
+                    self.node_set.add(n)
+                    self.nodes.append(n)
+
+        else:  # 如果是单个节点，直接添加
+            if node not in self.node_set:
+                self.nodes.append(node)
+                self.node_set.add(node)
+
+    def add_edge(self, edge: Union[Edge, List[Edge]]):
+        if isinstance(edge, list):
+            for e in edge:
+                if e not in self.edge_set:
+                    self.edge_set.add(e)
+                    self.edges.append(e)
+        else:
+            if edge not in self.edge_set:
+                self.edges.append(edge)
+                self.edge_set.add(edge)
+
 
 class TokenType(Enum):
     TEXT = "TEXT"
@@ -412,25 +435,32 @@ class Parser:
 
     def parse_one_src_line_content(self, tokens: List[Token]):
         cur = 0
+
+        cur, nodes = self.parse_node_list(tokens, cur)
+        if len(nodes) == 0:
+            return
+
+        self.graph_roots[-1].add_node(nodes)
+
         while True:
-            token = tokens[cur] if cur < len(tokens) else None
 
-            if token is None:
-                break
+            src_list = nodes
 
-            cur, nodes = self.parse_node_list(tokens, cur)
-            if len(nodes) == 0:
-                break
-
-            cur , line = self.pares_edge(tokens, cur)
+            cur, line = self.pares_edge(tokens, cur)
             if line is None:
                 break
-            
+
             cur, dst_nodes = self.parse_node_list(tokens, cur)
             if len(dst_nodes) == 0:
                 break
 
-            # parse nodes and edges
+            self.graph_roots[-1].add_node(dst_nodes)
+            for src in src_list:
+                for dst in dst_nodes:
+                    edge = Edge(src=src, dst=dst, edge=line)
+                    self.graph_roots[-1].add_edge(edge)
+
+            src_list = dst_nodes
 
     def parse(meriad: str) -> bool:
 
