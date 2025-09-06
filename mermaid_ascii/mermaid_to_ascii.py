@@ -439,7 +439,7 @@ class Parser:
         return cur, nodes
 
     # -->|选项1| in Decision -->|选项1| Action1[动作1]
-    def pares_edge(self, tokens: List[Token], cur: int):
+    def pares_edge(self, tokens: List[Token], cur: int) -> Tuple[int, Node]:
         token = tokens[cur] if cur < len(tokens) else None
         if token is None or token.type != TokenType.LINE:
             return cur, None
@@ -448,25 +448,30 @@ class Parser:
         line_label_inline = ""
         line_label_hangout = ""
 
-        tmp = cur
-
-        cur += 1
+        cur += 1  # eat line
         token = tokens[cur] if cur < len(tokens) else None
 
-        print(f"run on token {token}")
+        print(f"pares_edge process {token}")
 
         if token is not None and token.type == TokenType.TEXT:
+            # check is node or inline label?
             tmp_content = token.content
-            cur += 1
-            token = tokens[cur] if cur < len(tokens) else None
+
+            check_point = cur
+            check_point += 1
+
+            token = tokens[check_point] if check_point < len(tokens) else None
             if token is not None and token.type == TokenType.LINE:
-                cur += 1
-                token = tokens[cur] if cur < len(tokens) else None
+                check_point += 1
+                token = tokens[check_point] if check_point < len(tokens) else None
                 line_label_inline = tmp_content
+
+                cur = check_point
             else:
                 # line end
-                return tmp, Line.from_style(line_style, line_label_inline, "")
+                return cur, Line.from_style(line_style, line_label_inline, "")
 
+        # -->|...|
         if token is not None and token.type == TokenType.LABEL:
             cur += 1
             token = tokens[cur] if cur < len(tokens) else None
@@ -482,7 +487,7 @@ class Parser:
             if token is not None and token.type == TokenType.LABEL:
                 pass
             else:
-                raise ValueError(f"Invalid line label at {tmp}")
+                raise ValueError(f"Invalid line label at index {cur}")
 
         return cur, Line.from_style(line_style, line_label_inline, line_label_hangout)
 
@@ -494,12 +499,14 @@ class Parser:
 
         self.graph_roots[-1].add_node(nodes)
 
+        print(f"the cur state is {cur} : {tokens[cur]}")
+
         while True:
 
             src_list = nodes
 
             cur, line = self.pares_edge(tokens, cur)
-            print(f"the cur token {tokens[cur]}")
+            print(f"the cur token {cur}")
             if line is None:
                 break
 
@@ -530,8 +537,6 @@ class Parser:
             l = Lexer()
             l.run(line)
             tokens = l.tokens
-
-            print(f"token: {tokens}")
 
             if len(tokens) == 0:
                 continue
