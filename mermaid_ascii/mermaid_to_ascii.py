@@ -232,11 +232,16 @@ class Lexer:
                 continue
 
             # identifier or label
-            start = cur
-            while cur < size and not text[cur].isspace() and text[cur] not in p2:
+            begin = cur
+
+            while (cur < size) and (not text[cur].isspace()) and (text[cur] not in p2):
                 cur += 1
 
-            sub = text[start:cur]
+            if begin == cur:
+                cur = begin
+                continue
+
+            sub = text[begin:cur]
 
             k = TokenType.from_keyword(sub)
             if k is not None:
@@ -273,12 +278,14 @@ class Parser:
         node_id = token.content
         shape = NodeShape.RECT
 
-        cur += 1
-
-        token: Token = tokens[cur] if cur < len(tokens) else None
-
-        if token is None:
+        token: Token = tokens[cur + 1] if (cur + 1) < len(tokens) else None
+        if (token is None) or (
+            token is not None
+            and (token.type == TokenType.LINE or token.type == TokenType.AND)
+        ):
             return (cur, Node(id=node_id, label="", shape=shape))
+
+        cur += 1
 
         if token.type == TokenType.L_PAREN:
 
@@ -411,7 +418,9 @@ class Parser:
                 token = tokens[cur] if cur < len(tokens) else None
             if token is None or token.type != TokenType.R_BRACKET:
                 raise ValueError(f"Invalid node shape for node {node_id}")
-            return Node(id=node_id, label=node_label, shape=shape)
+            return cur, Node(id=node_id, label=node_label, shape=shape)
+
+        print(f"[Info] tokens:{tokens} with no node")
 
         return (cur, None)
 
@@ -436,30 +445,33 @@ class Parser:
             return cur, None
 
         line_style = token.content
-        line_label = ""
+        line_label_inline = ""
+        line_label_hangout = ""
 
         tmp = cur
 
         cur += 1
         token = tokens[cur] if cur < len(tokens) else None
 
+        print(f"run on token {token}")
+
         if token is not None and token.type == TokenType.TEXT:
-            line_label = token.content
+            tmp_content = token.content
             cur += 1
             token = tokens[cur] if cur < len(tokens) else None
-
             if token is not None and token.type == TokenType.LINE:
                 cur += 1
                 token = tokens[cur] if cur < len(tokens) else None
+                line_label_inline = tmp_content
             else:
                 # line end
-                return tmp, Line.from_style(line_style, line_label, "")
+                return tmp, Line.from_style(line_style, line_label_inline, "")
 
         if token is not None and token.type == TokenType.LABEL:
             cur += 1
             token = tokens[cur] if cur < len(tokens) else None
 
-            line_label_hangoff = (
+            line_label_hangout = (
                 token.content
                 if token is not None and token.type == TokenType.TEXT
                 else ""
@@ -472,16 +484,14 @@ class Parser:
             else:
                 raise ValueError(f"Invalid line label at {tmp}")
 
-        return cur, Line.from_style(line_style, line_label, line_label_hangoff)
+        return cur, Line.from_style(line_style, line_label_inline, line_label_hangout)
 
     def parse_one_src_line_content(self, tokens: List[Token]):
-        cur = 0
 
-        cur, nodes = self.parse_node_list(tokens, cur)
+        cur, nodes = self.parse_node_list(tokens, 0)
         if len(nodes) == 0:
             return
 
-        print(f"add nodes {nodes}")
         self.graph_roots[-1].add_node(nodes)
 
         while True:
@@ -489,12 +499,16 @@ class Parser:
             src_list = nodes
 
             cur, line = self.pares_edge(tokens, cur)
+            print(f"the cur token {tokens[cur]}")
             if line is None:
                 break
 
             cur, dst_nodes = self.parse_node_list(tokens, cur)
             if len(dst_nodes) == 0:
+                print(f"\tdst nodes is {dst_nodes}")
                 break
+
+            print(f"src node:{src_list} , dst nodes:{dst_nodes}")
 
             self.graph_roots[-1].add_node(dst_nodes)
             for src in src_list:
@@ -516,6 +530,8 @@ class Parser:
             l = Lexer()
             l.run(line)
             tokens = l.tokens
+
+            print(f"token: {tokens}")
 
             if len(tokens) == 0:
                 continue
