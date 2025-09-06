@@ -6,7 +6,8 @@ from collections import defaultdict
 
 
 class Direction(Enum):
-    TD = "TD"  # top to down
+    TB = "TB"  # Top to Bottom
+    TD = "TD"  # same as TB
     LR = "LR"  # left to right
     RL = "RL"  # right to left
     BT = "BT"  # bottom to top
@@ -72,12 +73,28 @@ class Node:
     label: str = ""
     shape: NodeShape = NodeShape.RECT
 
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, Node):
+            return False
+        return id == value.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
 
 @dataclass
 class Edge:
     src: Node
     dst: Node
     edge: Line
+
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, Edge):
+            return False
+        return self.src == value.src and self.dst == value.dst
+
+    def __hash__(self) -> int:
+        return hash((self.src, self.dst))
 
 
 @dataclass
@@ -150,6 +167,15 @@ class TokenType(Enum):
     SLASH = "/"
     BACKSLASH = "\\"
 
+    @staticmethod
+    def from_keyword(s: str):
+        mapping = {
+            "graph": TokenType.GRAPH,
+            "subgraph": TokenType.SUBGRAPH,
+            "end": TokenType.END,
+        }
+        return mapping.get(s, None)
+
 
 @dataclass
 class Token:
@@ -209,24 +235,28 @@ class Lexer:
             start = cur
             while cur < size and not text[cur].isspace() and text[cur] not in p2:
                 cur += 1
-            if cur > start:
-                self.tokens.append(Token(text[start:cur], TokenType.TEXT))
+
+            sub = text[start:cur]
+
+            k = TokenType.from_keyword(sub)
+            if k is not None:
+                self.tokens.append(Token(sub, k))
+            else:
+                self.tokens.append(Token(sub, TokenType.TEXT))
 
 
-T = TypeVar("T")
+# T = TypeVar("T")
+# class Iterator(Generic[T]):
+#     def __init__(self, items: List[T] = []):
+#         self.list = items
+#         self.index = 0
 
-
-class Iterator(Generic[T]):
-    def __init__(self, items: List[T] = []):
-        self.list = items
-        self.index = 0
-
-    def next(self) -> T:
-        if self.index >= len(self.list):
-            return None
-        item = self.list[self.index]
-        self.index += 1
-        return item
+#     def next(self) -> T:
+#         if self.index >= len(self.list):
+#             return None
+#         item = self.list[self.index]
+#         self.index += 1
+#         return item
 
 
 class Parser:
@@ -248,7 +278,7 @@ class Parser:
         token: Token = tokens[cur] if cur < len(tokens) else None
 
         if token is None:
-            return Node(id=node_id, label="", shape=shape)
+            return (cur, Node(id=node_id, label="", shape=shape))
 
         if token.type == TokenType.L_PAREN:
 
@@ -289,7 +319,7 @@ class Parser:
 
                 if token is None or token.type != TokenType.R_PAREN:
                     raise ValueError(f"Invalid node shape for node {node_id}")
-            return Node(id=node_id, label=node_label, shape=shape)
+            return (cur, Node(id=node_id, label=node_label, shape=shape))
 
         if token.type == TokenType.L_BRACKET:
             # [ ], [<,  [/ /], [\ \], [/ \], [\ /]
@@ -345,13 +375,13 @@ class Parser:
                 else:
                     raise ValueError(f"Invalid node shape for node {node_id}")
 
-                return Node(id=node_id, label=node_label, shape=shape)
+                return (cur, Node(id=node_id, label=node_label, shape=shape))
             if token.type == TokenType.RIGHT:  # [>
                 shape = NodeShape.AsymmetricShapeRight
-                return Node(id=node_id, label=node_label, shape=shape)
+                return (cur, Node(id=node_id, label=node_label, shape=shape))
             if token.type == TokenType.LEFT:  # [<
                 shape = NodeShape.AsymmetricShapeLeft
-                return Node(id=node_id, label=node_label, shape=shape)
+                return (cur, Node(id=node_id, label=node_label, shape=shape))
 
         if token.type == TokenType.LEFT:  # <]
             shape = NodeShape.AsymmetricShapeLeft
@@ -383,10 +413,12 @@ class Parser:
                 raise ValueError(f"Invalid node shape for node {node_id}")
             return Node(id=node_id, label=node_label, shape=shape)
 
+        return (cur, None)
+
     def parse_node_list(self, tokens: List[Token], cur: int):
         nodes = []
         while True:
-            cur, node = self.parse_node(tokens, cur)
+            (cur, node) = self.parse_node(tokens, cur)
             if node is None:
                 break
             nodes.append(node)
@@ -449,6 +481,7 @@ class Parser:
         if len(nodes) == 0:
             return
 
+        print(f"add nodes {nodes}")
         self.graph_roots[-1].add_node(nodes)
 
         while True:
@@ -493,6 +526,8 @@ class Parser:
             if token.type == TokenType.GRAPH:
                 root = Graph(id="root", parent=None)
 
+                self.graph_roots.append(root)
+
                 cur += 1
                 token = tokens[cur] if cur < len(tokens) else None
 
@@ -525,6 +560,11 @@ class Parser:
                 # drop the rest tokens in this line
                 continue
 
+            if token.type == TokenType.END:
+                self.graph_roots.pop()
+                continue
+            self.parse_one_src_line_content(tokens)
+
 
 test1 = """
 graph TB
@@ -547,4 +587,7 @@ graph TB
     Bi1[双向1] <--> Bi2[双向2]
 """
 
-parse(test1)
+p = Parser()
+p.parse(test1)
+
+print(p.graph_roots)
