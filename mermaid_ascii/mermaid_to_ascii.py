@@ -587,28 +587,27 @@ class Parser:
             self.parse_one_src_line_content(tokens)
 
 
-test1 = """
-graph TB
-    Start[开始] --> Process(处理)
-    Process --> Decision{判断}
-    
-    Decision -->|选项1| Action1[动作1]
-    Decision -->|选项2| Action2[动作2]
-    
-    Action1 -.->|虚线| Next[下一步]
-    Action2 ==>|粗线| Next
-    
-    Next --- Final[结束]
-    
-    Sub1[子节点1] & Sub2[子节点2] --> Merge[合并]
-    
-    Merge --o Circular[圆形箭头]
-    Circular --x Cross[交叉箭头]
-    
-    Bi1[双向1] <--> Bi2[双向2]
-"""
-
-p = Parser()
-p.parse(test1)
-
-print(p.graph_roots)
+if __name__ == "__main__":
+    test1 = """
+    graph TB
+        Start[开始] --> Process(处理)
+        Process --> Decision{判断}
+        
+        Decision -->|选项1| Action1[动作1]
+        Decision -->|选项2| Action2[动作2]
+        
+        Action1 -.->|虚线| Next[下一步]
+        Action2 ==>|粗线| Next
+        
+        Next --- Final[结束]
+        
+        Sub1[子节点1] & Sub2[子节点2] --> Merge[合并]
+        
+        Merge --o Circular[圆形箭头]
+        Circular --x Cross[交叉箭头]
+        
+        Bi1[双向1] <--> Bi2[双向2]
+    """
+    p = Parser()
+    p.parse(test1)
+    print(p.graph_roots)
