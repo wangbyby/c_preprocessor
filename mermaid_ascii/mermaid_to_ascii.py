@@ -1,9 +1,8 @@
 from dataclasses import dataclass, field
 from enum import Enum
-import re
 from typing import Dict, List, Tuple, Set, Generic, TypeVar, Union
 from collections import defaultdict
-
+import logging
 
 class Direction(Enum):
     TB = "TB"  # Top to Bottom
@@ -544,6 +543,10 @@ class Parser:
             cur = 0
             token = tokens[cur]
 
+
+            debugging = {"line":line, "tokens": tokens }
+            logging.debug(f"Parsing line: {debugging}")            
+        
             if token.type == TokenType.GRAPH:
                 root = Graph(id="root", parent=None)
 
