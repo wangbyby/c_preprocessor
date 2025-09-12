@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple, Set, Generic, TypeVar, Union
 from collections import defaultdict
 import logging
 
+
 class Direction(Enum):
     TB = "TB"  # Top to Bottom
     TD = "TD"  # same as TB
@@ -266,6 +267,35 @@ class Lexer:
 class Parser:
     def __init__(self):
         self.graph_roots: List[Graph] = []
+        self.graph_stack: List[Graph] = []
+
+    def add_root_graph(self, g: Graph):
+        self.graph_roots.append(g)
+        self.graph_stack.clear()
+        self.graph_stack.append(g)
+
+    def push_sub_graph(self, g: Graph):
+        if len(self.graph_stack) == 0:
+            raise ValueError("No root graph to add sub graph")
+        self.graph_stack[-1].add_sub_graph(g)
+        self.graph_stack.append(g)
+
+    def pop_sub_graph(self):
+        if len(self.graph_stack) == 0:
+            raise ValueError("No sub graph to pop")
+        self.graph_stack.pop()
+
+    def add_node(self, node: Union[Node, List[Node]]):
+        if len(self.graph_stack) == 0:
+            raise ValueError("No graph to add node")
+        self.graph_stack[-1].add_node(node)
+
+    def add_edge(self, edge: Union[Edge, List[Edge]]):
+        if len(self.graph_stack) == 0:
+            raise ValueError("No graph to add edge")
+        self.graph_stack[-1].add_edge(edge)
+
+    # ================================ parsing ================================ #
 
     def parse_node(self, tokens: List[Token], cur: int) -> Tuple[int, Node]:
         token = tokens[cur] if cur < len(tokens) else None
@@ -419,8 +449,6 @@ class Parser:
                 raise ValueError(f"Invalid node shape for node {node_id}")
             return cur, Node(id=node_id, label=node_label, shape=shape)
 
-        print(f"[Info] tokens:{tokens} with no node")
-
         return (cur, None)
 
     def parse_node_list(self, tokens: List[Token], cur: int):
@@ -450,7 +478,7 @@ class Parser:
         cur += 1  # eat line
         token = tokens[cur] if cur < len(tokens) else None
 
-        print(f"pares_edge process {token}")
+        logging.debug(f"pares_edge process {token}")
 
         if token is not None and token.type == TokenType.TEXT:
             # check is node or inline label?
@@ -496,31 +524,32 @@ class Parser:
         if len(nodes) == 0:
             return
 
-        self.graph_roots[-1].add_node(nodes)
+        self.add_node(nodes)
 
-        print(f"the cur state is {cur} : {tokens[cur]}")
+        logging.debug(f"the cur state is {cur} : {tokens[cur]}")
 
         while True:
 
             src_list = nodes
 
             cur, line = self.pares_edge(tokens, cur)
-            print(f"the cur token {cur}")
+            logging.debug(f"the cur token {cur}")
             if line is None:
                 break
 
             cur, dst_nodes = self.parse_node_list(tokens, cur)
             if len(dst_nodes) == 0:
-                print(f"\tdst nodes is {dst_nodes}")
+                logging.debug(f"\tdst nodes is {dst_nodes}")
                 break
 
-            print(f"src node:{src_list} , dst nodes:{dst_nodes}")
+            logging.debug(f"src node:{src_list} , dst nodes:{dst_nodes}")
 
-            self.graph_roots[-1].add_node(dst_nodes)
+            self.add_node(dst_nodes)
+
             for src in src_list:
                 for dst in dst_nodes:
                     edge = Edge(src=src, dst=dst, edge=line)
-                    self.graph_roots[-1].add_edge(edge)
+                    self.add_edge(edge)
 
             src_list = dst_nodes
 
@@ -543,14 +572,13 @@ class Parser:
             cur = 0
             token = tokens[cur]
 
+            debugging = {"line": line, "tokens": tokens}
+            logging.debug(f"Parsing line: {debugging}")
 
-            debugging = {"line":line, "tokens": tokens }
-            logging.debug(f"Parsing line: {debugging}")            
-        
             if token.type == TokenType.GRAPH:
                 root = Graph(id="root", parent=None)
 
-                self.graph_roots.append(root)
+                self.add_root_graph(root)
 
                 cur += 1
                 token = tokens[cur] if cur < len(tokens) else None
@@ -578,14 +606,19 @@ class Parser:
                 if token is not None and token.type == TokenType.TEXT:
                     subgraph_id = token.content
 
+                logging.debug(
+                    f"add sub graph {subgraph_id} to {self.graph_roots[-1].id}"
+                )
+
                 subgraph = Graph(id=subgraph_id, parent=self.graph_roots[-1])
-                self.graph_roots[-1].add_sub_graph(subgraph)
+
+                self.push_sub_graph(subgraph)
 
                 # drop the rest tokens in this line
                 continue
 
             if token.type == TokenType.END:
-                self.graph_roots.pop()
+                self.pop_sub_graph()
                 continue
             self.parse_one_src_line_content(tokens)
 
