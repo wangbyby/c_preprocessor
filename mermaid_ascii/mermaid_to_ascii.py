@@ -260,21 +260,6 @@ class Lexer:
             else:
                 self.tokens.append(Token(sub, TokenType.TEXT))
 
-
-# T = TypeVar("T")
-# class Iterator(Generic[T]):
-#     def __init__(self, items: List[T] = []):
-#         self.list = items
-#         self.index = 0
-
-#     def next(self) -> T:
-#         if self.index >= len(self.list):
-#             return None
-#         item = self.list[self.index]
-#         self.index += 1
-#         return item
-
-
 class Parser:
     def __init__(self):
         self.graph_roots: List[Graph] = []
