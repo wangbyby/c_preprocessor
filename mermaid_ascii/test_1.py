@@ -60,6 +60,10 @@ def test_2():
     assert len(root_graph.nodes) == 2
     assert len(root_graph.edges) == 1
     assert len(root_graph.children) == 1
+    assert root_graph.nodes[0].label == "Node A"
+    assert root_graph.nodes[1].label == "Node B"
+    assert root_graph.edges[0].src.label == "Node A"
+    assert root_graph.edges[0].dst.label == "Node B"
     
 
 def test_parser_empty_input():

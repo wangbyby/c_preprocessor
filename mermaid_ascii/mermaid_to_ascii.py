@@ -216,6 +216,9 @@ class Lexer:
     def run(self, text: str):
         cur = 0
         size = len(text)
+
+        punctor_num = 0
+
         while cur < size:
             if text[cur].isspace():
                 cur += 1
@@ -229,13 +232,21 @@ class Lexer:
             if text[cur] in punctor:
                 self.tokens.append(Token(text[cur], TokenType(text[cur])))
                 cur += 1
+                punctor_num = 1
                 continue
 
             # identifier or label
             begin = cur
 
-            while (cur < size) and (not text[cur].isspace()) and (text[cur] not in p2):
-                cur += 1
+            if punctor_num > 0:
+                punctor_num = 0
+                while cur < size and text[cur] not in punctor:
+                    cur += 1
+            else:
+                while (
+                    (cur < size) and (not text[cur].isspace()) and (text[cur] not in p2)
+                ):
+                    cur += 1
 
             if begin == cur:
                 cur = begin
