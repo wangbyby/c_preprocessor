@@ -754,6 +754,7 @@ class GraphToASCII:
             return ""
 
         positions = self.layout_nodes(nodes)
+
         max_x = max(pos[0] for pos in positions.values()) + self.node_width + 5
         max_y = max(pos[1] for pos in positions.values()) + self.node_height + 3
 
@@ -779,12 +780,16 @@ class GraphToASCII:
             node_name = node.id
             if node_name in positions:
                 x, y = positions[node_name]
-                label = node.label
+                label = ""
+                if node.label == "":
+                    label = node.id
+                else:
+                    label = node.label
                 shape = node.shape
 
                 if shape == NodeShape.RECT:
                     canvas.draw_box(x, y, self.node_width, self.node_height, label)
-                else:   
+                else:
                     # FIXME more shapes
                     canvas.draw_circle(
                         x + self.node_width // 2,
@@ -819,7 +824,7 @@ if __name__ == "__main__":
     """
     p = Parser()
     p.parse(test1)
-    print(p.graph_roots)
+    # print(p.graph_roots)
 
     c = GraphToASCII()
 
