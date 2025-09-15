@@ -99,47 +99,50 @@ class ASCIIGraphCanvas:
                 err += dx
                 y += sy
     
-    def draw_smart_connection(self, x1: int, y1: int, x2: int, y2: int):
-        """绘制智能连接线（L形或直线）"""
-        # 如果是直线连接（水平、垂直或对角线）
-        if x1 == x2 or y1 == y2 or abs(x2 - x1) == abs(y2 - y1):
-            self.draw_line(x1, y1, x2, y2)
+    def draw_clean_connection(self, x1: int, y1: int, x2: int, y2: int):
+        """绘制干净的连接线"""
+        if x1 == x2:  # 垂直直线
+            start_y = min(y1, y2)
+            end_y = max(y1, y2)
+            for y in range(start_y + 1, end_y):
+                self.set_char(x1, y, '|')
+        elif y1 == y2:  # 水平直线
+            start_x = min(x1, x2)
+            end_x = max(x1, x2)
+            for x in range(start_x + 1, end_x):
+                self.set_char(x, y1, '-')
         else:
-            # L形连接：先垂直再水平
-            mid_y = y1 + (y2 - y1) // 2
+            # 简化的L形连接：垂直优先
+            # 第一段：垂直线到目标行
+            start_y = min(y1, y2)
+            end_y = max(y1, y2)
+            for y in range(start_y + 1, end_y):
+                self.set_char(x1, y, '|')
             
-            # 第一段：垂直线
-            self.draw_line(x1, y1, x1, mid_y, '|')
-            # 第二段：水平线
-            self.draw_line(x1, mid_y, x2, mid_y, '-')
-            # 第三段：垂直线
-            self.draw_line(x2, mid_y, x2, y2, '|')
+            # 第二段：水平线到目标列
+            start_x = min(x1, x2)
+            end_x = max(x1, x2)
+            for x in range(start_x + 1, end_x):
+                self.set_char(x, y2, '-')
             
-            # 绘制转折点
-            if x1 != x2 and y1 != mid_y:
-                self.set_char(x1, mid_y, '+')
-            if x2 != x1 and mid_y != y2:
-                self.set_char(x2, mid_y, '+')
+            # 转折点
+            if x1 != x2 and y1 != y2:
+                self.set_char(x1, y2, '+')
     
     def draw_arrow(self, x1: int, y1: int, x2: int, y2: int):
         """绘制箭头"""
         # 绘制连接线
-        self.draw_smart_connection(x1, y1, x2, y2)
+        self.draw_clean_connection(x1, y1, x2, y2)
         
-        # 添加箭头头部
-        dx = x2 - x1
-        dy = y2 - y1
-        
-        if abs(dx) > abs(dy):  # 主要是水平方向
-            if dx > 0:
-                self.set_char(x2, y2, '>')
-            else:
-                self.set_char(x2, y2, '<')
-        else:  # 主要是垂直方向
-            if dy > 0:
-                self.set_char(x2, y2, 'v')
-            else:
-                self.set_char(x2, y2, '^')
+        # 添加箭头头部 - 在连接线的末端，不覆盖节点
+        if y2 > y1:  # 向下的箭头
+            self.set_char(x2, y2 - 1, 'v')
+        elif y2 < y1:  # 向上的箭头
+            self.set_char(x2, y2 + 1, '^')
+        elif x2 > x1:  # 向右的箭头
+            self.set_char(x2 - 1, y2, '>')
+        else:  # 向左的箭头
+            self.set_char(x2 + 1, y2, '<')
     
     def to_string(self) -> str:
         """转换为字符串"""
@@ -303,16 +306,16 @@ class PydotToASCII:
         dy = target_y - node_center_y
         
         # 根据方向确定连接点
-        if abs(dx) > abs(dy):  # 主要是水平方向
-            if dx > 0:  # 目标在右侧，连接右边缘
-                return node_x + self.node_width, node_center_y
-            else:  # 目标在左侧，连接左边缘
-                return node_x, node_center_y
-        else:  # 主要是垂直方向
+        if abs(dy) > abs(dx):  # 主要是垂直方向
             if dy > 0:  # 目标在下方，连接下边缘
                 return node_center_x, node_y + self.node_height
             else:  # 目标在上方，连接上边缘
-                return node_center_x, node_y
+                return node_center_x, node_y - 1
+        else:  # 主要是水平方向
+            if dx > 0:  # 目标在右侧，连接右边缘
+                return node_x + self.node_width, node_center_y
+            else:  # 目标在左侧，连接左边缘
+                return node_x - 1, node_center_y
     
     def convert_to_ascii(self, graph) -> str:
         """将pydot图形转换为ASCII"""
@@ -362,7 +365,7 @@ class PydotToASCII:
 def main():
     """示例用法"""
     # 创建示例图形
-    graph = pydot.Dot(graph_type='digraph', rankdir='LR')
+    graph = pydot.Dot(graph_type='digraph')
     
     # 添加节点
     graph.add_node(pydot.Node('A', label='Start', shape='box'))
@@ -382,6 +385,19 @@ def main():
     print("Pydot Graph to ASCII:")
     print("=" * 50)
     print(ascii_graph)
+    
+    # 测试简单的线性图
+    print("\n" + "=" * 50)
+    print("Simple Linear Graph:")
+    print("=" * 50)
+    
+    simple_graph = pydot.Dot(graph_type='digraph')
+    simple_graph.add_node(pydot.Node('X', label='Input', shape='box'))
+    simple_graph.add_node(pydot.Node('Y', label='Output', shape='box'))
+    simple_graph.add_edge(pydot.Edge('X', 'Y'))
+    
+    simple_ascii = converter.convert_to_ascii(simple_graph)
+    print(simple_ascii)
 
 
 if __name__ == "__main__":
