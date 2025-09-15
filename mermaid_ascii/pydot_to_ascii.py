@@ -63,24 +63,31 @@ class ASCIIGraphCanvas:
             for i, char in enumerate(text):
                 self.set_char(text_x + i, text_y, char)
     
-    def draw_line(self, x1: int, y1: int, x2: int, y2: int):
-        """绘制直线"""
-        dx = abs(x2 - x1)
-        dy = abs(y2 - y1)
+    def draw_line(self, x1: int, y1: int, x2: int, y2: int, char: str = None):
+        """绘制直线，智能选择字符"""
+        dx = x2 - x1
+        dy = y2 - y1
+        
+        # 如果没有指定字符，根据方向自动选择
+        if char is None:
+            if abs(dx) < 2:  # 垂直线
+                char = '|'
+            elif abs(dy) < 2:  # 水平线
+                char = '-'
+            elif (dx > 0 and dy > 0) or (dx < 0 and dy < 0):  # 正斜率 (\)
+                char = '\\'
+            else:  # 负斜率 (/)
+                char = '/'
+        
+        # Bresenham算法绘制线条
+        dx = abs(dx)
+        dy = abs(dy)
         sx = 1 if x1 < x2 else -1
         sy = 1 if y1 < y2 else -1
         err = dx - dy
         
         x, y = x1, y1
         while True:
-            # 选择合适的字符
-            if dx > dy:
-                char = '-'
-            elif dy > dx:
-                char = '|'
-            else:
-                char = '*'
-            
             self.set_char(x, y, char)
             if x == x2 and y == y2:
                 break
@@ -92,19 +99,47 @@ class ASCIIGraphCanvas:
                 err += dx
                 y += sy
     
+    def draw_smart_connection(self, x1: int, y1: int, x2: int, y2: int):
+        """绘制智能连接线（L形或直线）"""
+        # 如果是直线连接（水平、垂直或对角线）
+        if x1 == x2 or y1 == y2 or abs(x2 - x1) == abs(y2 - y1):
+            self.draw_line(x1, y1, x2, y2)
+        else:
+            # L形连接：先垂直再水平
+            mid_y = y1 + (y2 - y1) // 2
+            
+            # 第一段：垂直线
+            self.draw_line(x1, y1, x1, mid_y, '|')
+            # 第二段：水平线
+            self.draw_line(x1, mid_y, x2, mid_y, '-')
+            # 第三段：垂直线
+            self.draw_line(x2, mid_y, x2, y2, '|')
+            
+            # 绘制转折点
+            if x1 != x2 and y1 != mid_y:
+                self.set_char(x1, mid_y, '+')
+            if x2 != x1 and mid_y != y2:
+                self.set_char(x2, mid_y, '+')
+    
     def draw_arrow(self, x1: int, y1: int, x2: int, y2: int):
         """绘制箭头"""
-        self.draw_line(x1, y1, x2, y2)
+        # 绘制连接线
+        self.draw_smart_connection(x1, y1, x2, y2)
         
         # 添加箭头头部
-        if x2 > x1:
-            self.set_char(x2, y2, '>')
-        elif x2 < x1:
-            self.set_char(x2, y2, '<')
-        elif y2 > y1:
-            self.set_char(x2, y2, 'v')
-        else:
-            self.set_char(x2, y2, '^')
+        dx = x2 - x1
+        dy = y2 - y1
+        
+        if abs(dx) > abs(dy):  # 主要是水平方向
+            if dx > 0:
+                self.set_char(x2, y2, '>')
+            else:
+                self.set_char(x2, y2, '<')
+        else:  # 主要是垂直方向
+            if dy > 0:
+                self.set_char(x2, y2, 'v')
+            else:
+                self.set_char(x2, y2, '^')
     
     def to_string(self) -> str:
         """转换为字符串"""
@@ -258,6 +293,27 @@ class PydotToASCII:
         
         return positions, canvas_width, canvas_height
     
+    def get_connection_point(self, node_x: int, node_y: int, target_x: int, target_y: int) -> Tuple[int, int]:
+        """计算节点的连接点（边缘而不是中心）"""
+        node_center_x = node_x + self.node_width // 2
+        node_center_y = node_y + self.node_height // 2
+        
+        # 计算目标方向
+        dx = target_x - node_center_x
+        dy = target_y - node_center_y
+        
+        # 根据方向确定连接点
+        if abs(dx) > abs(dy):  # 主要是水平方向
+            if dx > 0:  # 目标在右侧，连接右边缘
+                return node_x + self.node_width, node_center_y
+            else:  # 目标在左侧，连接左边缘
+                return node_x, node_center_y
+        else:  # 主要是垂直方向
+            if dy > 0:  # 目标在下方，连接下边缘
+                return node_center_x, node_y + self.node_height
+            else:  # 目标在上方，连接上边缘
+                return node_center_x, node_y
+    
     def convert_to_ascii(self, graph) -> str:
         """将pydot图形转换为ASCII"""
         nodes, edges = self.parse_graph(graph)
@@ -277,13 +333,15 @@ class PydotToASCII:
                 src_x, src_y = positions[src]
                 dst_x, dst_y = positions[dst]
                 
-                # 计算连接点（节点中心）
-                src_center_x = src_x + self.node_width // 2
-                src_center_y = src_y + self.node_height // 2
-                dst_center_x = dst_x + self.node_width // 2
-                dst_center_y = dst_y + self.node_height // 2
+                # 计算智能连接点（连接到节点边缘而不是中心）
+                src_connect_x, src_connect_y = self.get_connection_point(
+                    src_x, src_y, dst_x + self.node_width // 2, dst_y + self.node_height // 2
+                )
+                dst_connect_x, dst_connect_y = self.get_connection_point(
+                    dst_x, dst_y, src_x + self.node_width // 2, src_y + self.node_height // 2
+                )
                 
-                canvas.draw_arrow(src_center_x, src_center_y, dst_center_x, dst_center_y)
+                canvas.draw_arrow(src_connect_x, src_connect_y, dst_connect_x, dst_connect_y)
         
         # 绘制节点
         for node_name, node_info in nodes.items():
