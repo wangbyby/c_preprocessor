@@ -7,7 +7,7 @@ Pydot Graph to ASCII converter
 
 from typing import Dict, List, Tuple, Set
 import re
-
+import pydot
 
 class ASCIIGraphCanvas:
     """ASCII图形画布"""
@@ -115,14 +115,13 @@ class PydotToASCII:
     """Pydot图形转ASCII转换器"""
     
     def __init__(self):
-        self.canvas_width = 80
-        self.canvas_height = 40
-        self.node_width = 8
+        self.node_width = 10
         self.node_height = 3
-        self.node_spacing_x = 15
-        self.node_spacing_y = 8
+        self.node_spacing_x = 4  # 节点间水平间距
+        self.node_spacing_y = 2  # 层级间垂直间距
+        self.margin = 2
     
-    def parse_graph(self, graph: pydot.Dot) -> Tuple[Dict, List]:
+    def parse_graph(self, graph) -> Tuple[Dict, List]:
         """解析pydot图形，提取节点和边"""
         nodes = {}
         edges = []
@@ -158,41 +157,119 @@ class PydotToASCII:
         
         return nodes, edges
     
-    def layout_nodes(self, nodes: Dict) -> Dict:
-        """计算节点布局位置"""
-        positions = {}
-        node_names = list(nodes.keys())
+    def build_adjacency_list(self, nodes: Dict, edges: List) -> Dict:
+        """构建邻接表"""
+        adj_list = {node: [] for node in nodes.keys()}
+        in_degree = {node: 0 for node in nodes.keys()}
         
-        # 简单的网格布局
-        cols = min(len(node_names), 4)  # 最多4列
-        rows = (len(node_names) + cols - 1) // cols
+        for src, dst in edges:
+            if src in adj_list and dst in adj_list:
+                adj_list[src].append(dst)
+                in_degree[dst] += 1
         
-        for i, node_name in enumerate(node_names):
-            col = i % cols
-            row = i // cols
-            
-            x = 5 + col * self.node_spacing_x
-            y = 3 + row * self.node_spacing_y
-            
-            positions[node_name] = (x, y)
-        
-        return positions
+        return adj_list, in_degree
     
-    def convert_to_ascii(self, graph: pydot.Dot) -> str:
+    def find_root_nodes(self, in_degree: Dict) -> List:
+        """找到根节点（入度为0的节点）"""
+        return [node for node, degree in in_degree.items() if degree == 0]
+    
+    def calculate_levels(self, nodes: Dict, edges: List) -> Tuple[Dict, int]:
+        """计算每个节点的层级和最大深度"""
+        adj_list, in_degree = self.build_adjacency_list(nodes, edges)
+        root_nodes = self.find_root_nodes(in_degree)
+        
+        if not root_nodes:
+            # 如果没有根节点（可能有环），选择第一个节点作为根
+            root_nodes = [list(nodes.keys())[0]] if nodes else []
+        
+        levels = {}
+        max_depth = 0
+        
+        # BFS计算层级
+        from collections import deque
+        queue = deque()
+        
+        # 初始化根节点
+        for root in root_nodes:
+            levels[root] = 0
+            queue.append((root, 0))
+        
+        visited = set(root_nodes)
+        
+        while queue:
+            node, level = queue.popleft()
+            max_depth = max(max_depth, level)
+            
+            for neighbor in adj_list.get(node, []):
+                if neighbor not in visited:
+                    levels[neighbor] = level + 1
+                    queue.append((neighbor, level + 1))
+                    visited.add(neighbor)
+        
+        # 处理未访问的节点（可能在环中）
+        for node in nodes:
+            if node not in levels:
+                levels[node] = max_depth + 1
+                max_depth += 1
+        
+        return levels, max_depth
+    
+    def calculate_level_widths(self, levels: Dict) -> Dict:
+        """计算每层的节点数量"""
+        level_counts = {}
+        for node, level in levels.items():
+            level_counts[level] = level_counts.get(level, 0) + 1
+        return level_counts
+    
+    def layout_nodes(self, nodes: Dict, edges: List) -> Tuple[Dict, int, int]:
+        """基于图结构计算节点布局位置"""
+        levels, max_depth = self.calculate_levels(nodes, edges)
+        level_counts = self.calculate_level_widths(levels)
+        
+        # 计算画布尺寸
+        max_width_nodes = max(level_counts.values()) if level_counts else 1
+        canvas_width = max_width_nodes * (self.node_width + self.node_spacing_x) + 2 * self.margin
+        canvas_height = (max_depth + 1) * (self.node_height + self.node_spacing_y) + 2 * self.margin
+        
+        # 按层级分组节点
+        nodes_by_level = {}
+        for node, level in levels.items():
+            if level not in nodes_by_level:
+                nodes_by_level[level] = []
+            nodes_by_level[level].append(node)
+        
+        # 计算每个节点的位置
+        positions = {}
+        
+        for level, level_nodes in nodes_by_level.items():
+            level_width = len(level_nodes)
+            
+            # 计算该层节点的起始x位置（居中对齐）
+            total_level_width = level_width * self.node_width + (level_width - 1) * self.node_spacing_x
+            start_x = (canvas_width - total_level_width) // 2
+            
+            # 计算y位置
+            y = self.margin + level * (self.node_height + self.node_spacing_y)
+            
+            # 为该层的每个节点分配位置
+            for i, node in enumerate(level_nodes):
+                x = start_x + i * (self.node_width + self.node_spacing_x)
+                positions[node] = (x, y)
+        
+        return positions, canvas_width, canvas_height
+    
+    def convert_to_ascii(self, graph) -> str:
         """将pydot图形转换为ASCII"""
         nodes, edges = self.parse_graph(graph)
         
         if not nodes:
             return "没有找到节点"
         
-        # 计算布局
-        positions = self.layout_nodes(nodes)
+        # 使用新的布局系统计算位置和画布大小
+        positions, canvas_width, canvas_height = self.layout_nodes(nodes, edges)
         
-        # 调整画布大小
-        max_x = max(pos[0] for pos in positions.values()) + self.node_width + 5
-        max_y = max(pos[1] for pos in positions.values()) + self.node_height + 3
-        
-        canvas = ASCIIGraphCanvas(max_x, max_y)
+        # 创建画布
+        canvas = ASCIIGraphCanvas(canvas_width, canvas_height)
         
         # 绘制边
         for src, dst in edges:
@@ -230,9 +307,9 @@ def main():
     graph = pydot.Dot(graph_type='digraph', rankdir='LR')
     
     # 添加节点
-    graph.add_node(pydot.Node('A', label='Start'))
+    graph.add_node(pydot.Node('A', label='Start', shape='box'))
     graph.add_node(pydot.Node('B', label='Process', shape='box'))
-    graph.add_node(pydot.Node('C', label='End'))
+    graph.add_node(pydot.Node('C', label='End', shape='box'))
     graph.add_node(pydot.Node('D', label='Error', shape='box'))
     
     # 添加边
