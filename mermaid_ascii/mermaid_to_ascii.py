@@ -729,22 +729,349 @@ class Parser:
 
 
  
+@dataclass
+class NodePosition:
+    x: float
+    y: float
+    width: float
+    height: float
+    label: str
+    shape: str
+
+@dataclass
+class EdgePosition:
+    src_id: str
+    dst_id: str
+    points: List[Tuple[float, float]]
+    label: str = ""
+
 class LayOut:
     def __init__(self):
-        pass
+        self.scale_factor = 10  # Scale factor to convert from dot coordinates to ASCII
+        self.node_positions: Dict[str, NodePosition] = {}
+        self.edge_positions: List[EdgePosition] = []
+        self.canvas_width = 0
+        self.canvas_height = 0
 
-    def layout_calc(self, g:Graph):
-        dot_graph = pydot.Dot(graph_type="digraph", rankdir="TB")  # 自上而下层次布局
+    def parse_dot_output(self, layout_lines: List[str]):
+        """Parse the plain text output from pydot/graphviz"""
+        self.node_positions.clear()
+        self.edge_positions.clear()
+        
+        for line in layout_lines:
+            parts = line.strip().split()
+            if not parts:
+                continue
+                
+            if parts[0] == "graph":
+                # graph scale width height
+                if len(parts) >= 4:
+                    self.canvas_width = int(float(parts[2]) * self.scale_factor)
+                    self.canvas_height = int(float(parts[3]) * self.scale_factor)
+                    
+            elif parts[0] == "node":
+                # node name x y width height label style shape color fillcolor
+                if len(parts) >= 6:
+                    node_id = parts[1]
+                    x = float(parts[2]) * self.scale_factor
+                    y = float(parts[3]) * self.scale_factor
+                    width = float(parts[4]) * self.scale_factor
+                    height = float(parts[5]) * self.scale_factor
+                    label = parts[6] if len(parts) > 6 else node_id
+                    shape = parts[8] if len(parts) > 8 else "box"
+                    
+                    self.node_positions[node_id] = NodePosition(
+                        x=x, y=y, width=width, height=height, label=label, shape=shape
+                    )
+                    
+            elif parts[0] == "edge":
+                # edge tail head n x1 y1 .. xn yn [label xl yl] style color
+                if len(parts) >= 4:
+                    src_id = parts[1]
+                    dst_id = parts[2]
+                    n_points = int(parts[3])
+                    
+                    points = []
+                    for i in range(n_points):
+                        if 4 + i*2 + 1 < len(parts):
+                            x = float(parts[4 + i*2]) * self.scale_factor
+                            y = float(parts[4 + i*2 + 1]) * self.scale_factor
+                            points.append((x, y))
+                    
+                    self.edge_positions.append(EdgePosition(
+                        src_id=src_id, dst_id=dst_id, points=points
+                    ))
 
-        for e in g.edges:
-            dot_graph.add_edge(pydot.Edge(e.src.id, e.dst.id))
+    def layout_calc(self, g: Graph) -> Dict[str, Tuple[int, int]]:
+        """Calculate layout using pydot and return node positions"""
+        dot_graph = pydot.Dot(graph_type="digraph", rankdir="TB")
+        
+        # Add nodes with labels
+        for node in g.nodes:
+            label = node.label if node.label else node.id
+            dot_node = pydot.Node(node.id, label=label)
+            dot_graph.add_node(dot_node)
+        
+        # Add edges
+        for edge in g.edges:
+            dot_edge = pydot.Edge(edge.src.id, edge.dst.id)
+            if edge.edge.hangoff_label:
+                dot_edge.set_label(edge.edge.hangoff_label)
+            dot_graph.add_edge(dot_edge)
 
-        dot_graph.set_prog("dot")
+        # Generate layout
+        try:
+            layout_output = dot_graph.create_plain().decode("utf-8").splitlines()
+            self.parse_dot_output(layout_output)
+            
+            # Convert to simple position dict for compatibility
+            positions = {}
+            for node_id, pos in self.node_positions.items():
+                positions[node_id] = (int(pos.x), int(pos.y))
+            
+            return positions
+            
+        except Exception as e:
+            logging.error(f"Error generating layout: {e}")
+            # Fallback to simple grid layout
+            return self._fallback_layout(g.nodes)
+    
+    def _fallback_layout(self, nodes: List[Node]) -> Dict[str, Tuple[int, int]]:
+        """Fallback grid layout if pydot fails"""
+        positions = {}
+        cols = min(len(nodes), 4)
+        for i, node in enumerate(nodes):
+            col = i % cols
+            row = i // cols
+            x = 10 + col * 20
+            y = 5 + row * 10
+            positions[node.id] = (x, y)
+        return positions
 
-
-        layout = dot_graph.create_plain().decode("utf-8").splitlines()
-
-        print(layout)
+    def convert_to_ascii(self, graph: Graph) -> str:
+        """Convert graph to ASCII using pydot layout"""
+        if not graph.nodes:
+            return ""
+        
+        # Get layout positions
+        positions = self.layout_calc(graph)
+        
+        # Calculate canvas size
+        if self.canvas_width == 0 or self.canvas_height == 0:
+            max_x = max(pos[0] for pos in positions.values()) + 20
+            max_y = max(pos[1] for pos in positions.values()) + 10
+        else:
+            max_x = max(self.canvas_width, 80)
+            max_y = max(self.canvas_height, 40)
+        
+        canvas = ASCIIGraphCanvas(max_x, max_y)
+        
+        # Draw edges first (so they appear behind nodes)
+        self._draw_edges(canvas, graph, positions)
+        
+        # Draw nodes
+        self._draw_nodes(canvas, graph, positions)
+        
+        return canvas.to_string()
+    
+    def _draw_edges(self, canvas: ASCIIGraphCanvas, graph: Graph, positions: Dict[str, Tuple[int, int]]):
+        """Draw edges using layout information"""
+        for edge in graph.edges:
+            src_id = edge.src.id
+            dst_id = edge.dst.id
+            
+            if src_id in positions and dst_id in positions:
+                src_x, src_y = positions[src_id]
+                dst_x, dst_y = positions[dst_id]
+                
+                # Use pydot edge positions if available
+                edge_pos = next((ep for ep in self.edge_positions 
+                               if ep.src_id == src_id and ep.dst_id == dst_id), None)
+                
+                if edge_pos and len(edge_pos.points) >= 2:
+                    # Draw polyline using pydot points
+                    points = edge_pos.points
+                    for i in range(len(points) - 1):
+                        x1, y1 = int(points[i][0]), int(points[i][1])
+                        x2, y2 = int(points[i+1][0]), int(points[i+1][1])
+                        self._draw_line_segment(canvas, x1, y1, x2, y2, edge.edge)
+                    
+                    # Draw arrow at the end
+                    if len(points) >= 2:
+                        x1, y1 = int(points[-2][0]), int(points[-2][1])
+                        x2, y2 = int(points[-1][0]), int(points[-1][1])
+                        self._draw_arrow_head(canvas, x1, y1, x2, y2)
+                else:
+                    # Fallback to direct line
+                    self._draw_line_segment(canvas, src_x + 4, src_y + 1, 
+                                          dst_x + 4, dst_y + 1, edge.edge)
+                    self._draw_arrow_head(canvas, src_x + 4, src_y + 1, 
+                                        dst_x + 4, dst_y + 1)
+    
+    def _draw_line_segment(self, canvas: ASCIIGraphCanvas, x1: int, y1: int, 
+                          x2: int, y2: int, line: Line):
+        """Draw a line segment with appropriate style"""
+        if line.type == LineType.DASHED:
+            self._draw_dashed_line(canvas, x1, y1, x2, y2)
+        elif line.type == LineType.BOLD:
+            self._draw_bold_line(canvas, x1, y1, x2, y2)
+        else:
+            canvas.draw_line(x1, y1, x2, y2)
+    
+    def _draw_dashed_line(self, canvas: ASCIIGraphCanvas, x1: int, y1: int, x2: int, y2: int):
+        """Draw a dashed line"""
+        dx = abs(x2 - x1)
+        dy = abs(y2 - y1)
+        sx = 1 if x1 < x2 else -1
+        sy = 1 if y1 < y2 else -1
+        err = dx - dy
+        
+        x, y = x1, y1
+        step = 0
+        while True:
+            if step % 3 != 2:  # Draw every 2 out of 3 steps
+                if dx > dy:
+                    char = "-"
+                elif dy > dx:
+                    char = "|"
+                else:
+                    char = "."
+                canvas.set_char(x, y, char)
+            
+            if x == x2 and y == y2:
+                break
+            e2 = 2 * err
+            if e2 > -dy:
+                err -= dy
+                x += sx
+            if e2 < dx:
+                err += dx
+                y += sy
+            step += 1
+    
+    def _draw_bold_line(self, canvas: ASCIIGraphCanvas, x1: int, y1: int, x2: int, y2: int):
+        """Draw a bold line using double characters"""
+        dx = abs(x2 - x1)
+        dy = abs(y2 - y1)
+        sx = 1 if x1 < x2 else -1
+        sy = 1 if y1 < y2 else -1
+        err = dx - dy
+        
+        x, y = x1, y1
+        while True:
+            if dx > dy:
+                char = "="
+            elif dy > dx:
+                char = "‖"  # Double vertical line
+            else:
+                char = "#"
+            canvas.set_char(x, y, char)
+            
+            if x == x2 and y == y2:
+                break
+            e2 = 2 * err
+            if e2 > -dy:
+                err -= dy
+                x += sx
+            if e2 < dx:
+                err += dx
+                y += sy
+    
+    def _draw_arrow_head(self, canvas: ASCIIGraphCanvas, x1: int, y1: int, x2: int, y2: int):
+        """Draw arrow head at the destination"""
+        if x2 > x1:
+            canvas.set_char(x2, y2, ">")
+        elif x2 < x1:
+            canvas.set_char(x2, y2, "<")
+        elif y2 > y1:
+            canvas.set_char(x2, y2, "v")
+        else:
+            canvas.set_char(x2, y2, "^")
+    
+    def _draw_nodes(self, canvas: ASCIIGraphCanvas, graph: Graph, positions: Dict[str, Tuple[int, int]]):
+        """Draw nodes using their shapes"""
+        for node in graph.nodes:
+            if node.id in positions:
+                x, y = positions[node.id]
+                label = node.label if node.label else node.id
+                
+                # Get size from pydot if available
+                node_pos = self.node_positions.get(node.id)
+                if node_pos:
+                    width = max(8, int(node_pos.width))
+                    height = max(3, int(node_pos.height))
+                else:
+                    width = max(8, len(label) + 4)
+                    height = 3
+                
+                self._draw_node_shape(canvas, x, y, width, height, label, node.shape)
+    
+    def _draw_node_shape(self, canvas: ASCIIGraphCanvas, x: int, y: int, 
+                        width: int, height: int, label: str, shape: NodeShape):
+        """Draw a node with the specified shape"""
+        if shape == NodeShape.RECT:
+            canvas.draw_box(x, y, width, height, label)
+        elif shape == NodeShape.ROUND:
+            self._draw_rounded_box(canvas, x, y, width, height, label)
+        elif shape in [NodeShape.CIRCLE, NodeShape.DOUBLECIRCLE]:
+            radius = min(width, height) // 2
+            canvas.draw_circle(x + width//2, y + height//2, radius, label)
+            if shape == NodeShape.DOUBLECIRCLE:
+                canvas.draw_circle(x + width//2, y + height//2, radius - 1, "")
+        elif shape == NodeShape.DIAMOND:
+            self._draw_diamond(canvas, x, y, width, height, label)
+        else:
+            # Default to rectangle for unsupported shapes
+            canvas.draw_box(x, y, width, height, label)
+    
+    def _draw_rounded_box(self, canvas: ASCIIGraphCanvas, x: int, y: int, 
+                         width: int, height: int, label: str):
+        """Draw a rounded rectangle"""
+        # Draw horizontal lines
+        for i in range(1, width - 1):
+            canvas.set_char(x + i, y, "-")
+            canvas.set_char(x + i, y + height - 1, "-")
+        
+        # Draw vertical lines
+        for i in range(1, height - 1):
+            canvas.set_char(x, y + i, "|")
+            canvas.set_char(x + width - 1, y + i, "|")
+        
+        # Draw rounded corners
+        canvas.set_char(x, y, ".")
+        canvas.set_char(x + width - 1, y, ".")
+        canvas.set_char(x, y + height - 1, "'")
+        canvas.set_char(x + width - 1, y + height - 1, "'")
+        
+        # Add label
+        if label:
+            text_x = x + (width - len(label)) // 2
+            text_y = y + height // 2
+            for i, char in enumerate(label):
+                if text_x + i < x + width - 1:
+                    canvas.set_char(text_x + i, text_y, char)
+    
+    def _draw_diamond(self, canvas: ASCIIGraphCanvas, x: int, y: int, 
+                     width: int, height: int, label: str):
+        """Draw a diamond shape"""
+        mid_x = x + width // 2
+        mid_y = y + height // 2
+        
+        # Draw diamond outline
+        for i in range(height // 2 + 1):
+            left_x = mid_x - i
+            right_x = mid_x + i
+            canvas.set_char(left_x, y + i, "/")
+            canvas.set_char(right_x, y + i, "\\")
+            canvas.set_char(left_x, y + height - 1 - i, "\\")
+            canvas.set_char(right_x, y + height - 1 - i, "/")
+        
+        # Add label
+        if label:
+            text_x = x + (width - len(label)) // 2
+            text_y = y + height // 2
+            for i, char in enumerate(label):
+                canvas.set_char(text_x + i, text_y, char)
 
 
 
@@ -828,6 +1155,9 @@ class LayOut:
 
 
 if __name__ == "__main__":
+    # Enable logging for debugging
+    logging.basicConfig(level=logging.INFO)
+    
     test1 = """
     graph TB
         Start[开始] --> Process(处理)
@@ -842,17 +1172,23 @@ if __name__ == "__main__":
         Next --- Final[结束]
         
         Sub1[子节点1] & Sub2[子节点2] --> Merge[合并]
-        
-        Merge --o Circular[圆形箭头]
-        Circular --x Cross[交叉箭头]
-        
-        Bi1[双向1] <--> Bi2[双向2]
     """
+    
+    print("Parsing Mermaid diagram...")
     p = Parser()
     p.parse(test1)
-    # print(p.graph_roots)
-
-    g = p.graph_roots[0]
-
-    l = LayOut()
-    l.layout_calc(g)
+    
+    if p.graph_roots:
+        g = p.graph_roots[0]
+        print(f"Found {len(g.nodes)} nodes and {len(g.edges)} edges")
+        
+        print("\nGenerating ASCII diagram using pydot layout...")
+        layout = LayOut()
+        ascii_result = layout.convert_to_ascii(g)
+        
+        print("\nASCII Diagram:")
+        print("=" * 60)
+        print(ascii_result)
+        print("=" * 60)
+    else:
+        print("No graph found in the input")
