@@ -723,82 +723,304 @@ class Parser:
 
 
 class GraphToASCII:
+    
     def __init__(self):
-        self.canvas_width = 80
-        self.canvas_height = 40
-        self.node_width = 8
+        self.node_width = 10
         self.node_height = 3
-        self.node_spacing_x = 15
-        self.node_spacing_y = 8
-
-    def layout_nodes(self, nodes: List[Node]) -> Dict[str, Tuple[int, int]]:
+        self.node_spacing_x = 4  # 节点间水平间距
+        self.node_spacing_y = 2  # 层级间垂直间距
+        self.margin = 2
+    
+    
+    def build_adjacency_list(self, nodes: Dict, edges: List) -> Dict:
+        """构建邻接表"""
+        adj_list = {node: [] for node in nodes.keys()}
+        in_degree = {node: 0 for node in nodes.keys()}
+        
+        for src, dst in edges:
+            if src in adj_list and dst in adj_list:
+                adj_list[src].append(dst)
+                in_degree[dst] += 1
+        
+        return adj_list, in_degree
+    
+    def find_root_nodes(self, in_degree: Dict) -> List:
+        """找到根节点（入度为0的节点）"""
+        return [node for node, degree in in_degree.items() if degree == 0]
+    
+    def calculate_levels_bfs(self, nodes: Dict, edges: List) -> Tuple[Dict, int]:
+        """使用BFS计算每个节点的层级（用于宽度计算）"""
+        adj_list, in_degree = self.build_adjacency_list(nodes, edges)
+        root_nodes = self.find_root_nodes(in_degree)
+        
+        if not root_nodes:
+            # 如果没有根节点（可能有环），选择第一个节点作为根
+            root_nodes = [list(nodes.keys())[0]] if nodes else []
+        
+        levels = {}
+        max_depth = 0
+        
+        # BFS计算层级 - 用于确定每层的宽度
+        from collections import deque
+        queue = deque()
+        
+        # 初始化根节点
+        for root in root_nodes:
+            levels[root] = 0
+            queue.append((root, 0))
+        
+        visited = set(root_nodes)
+        
+        while queue:
+            node, level = queue.popleft()
+            max_depth = max(max_depth, level)
+            
+            for neighbor in adj_list.get(node, []):
+                if neighbor not in visited:
+                    levels[neighbor] = level + 1
+                    queue.append((neighbor, level + 1))
+                    visited.add(neighbor)
+        
+        # 处理未访问的节点（可能在环中）
+        for node in nodes:
+            if node not in levels:
+                levels[node] = max_depth + 1
+                max_depth += 1
+        
+        return levels, max_depth
+    
+    def calculate_max_depth_dfs(self, nodes: Dict, edges: List) -> int:
+        """使用DFS计算图的最大深度（用于高度计算）"""
+        adj_list, in_degree = self.build_adjacency_list(nodes, edges)
+        root_nodes = self.find_root_nodes(in_degree)
+        
+        if not root_nodes:
+            root_nodes = [list(nodes.keys())[0]] if nodes else []
+        
+        max_depth = 0
+        visited = set()
+        
+        def dfs(node: str, depth: int):
+            nonlocal max_depth
+            if node in visited:
+                return
+            
+            visited.add(node)
+            max_depth = max(max_depth, depth)
+            
+            for neighbor in adj_list.get(node, []):
+                dfs(neighbor, depth + 1)
+        
+        # 从每个根节点开始DFS
+        for root in root_nodes:
+            dfs(root, 0)
+        
+        # 处理可能未访问的节点（环或孤立节点）
+        for node in nodes:
+            if node not in visited:
+                dfs(node, max_depth + 1)
+        
+        return max_depth
+    
+    def calculate_level_widths(self, levels: Dict) -> Dict:
+        """计算每层的节点数量"""
+        level_counts = {}
+        for node, level in levels.items():
+            level_counts[level] = level_counts.get(level, 0) + 1
+        return level_counts
+    
+    def layout_nodes(self, nodes: Dict, edges: List) -> Tuple[Dict, int, int]:
+        """基于图结构计算节点布局位置 - 使用BFS计算宽度，DFS计算深度"""
+        # 使用BFS计算层级（用于宽度计算）
+        levels, bfs_depth = self.calculate_levels_bfs(nodes, edges)
+        level_counts = self.calculate_level_widths(levels)
+        
+        # 使用DFS计算最大深度（用于高度计算）
+        max_depth = self.calculate_max_depth_dfs(nodes, edges)
+        
+        # 计算画布尺寸
+        # 宽度：基于BFS层级遍历的最大层宽度
+        max_width_nodes = max(level_counts.values()) if level_counts else 1
+        canvas_width = max_width_nodes * (self.node_width + self.node_spacing_x) + 2 * self.margin
+        
+        # 高度：基于DFS的最深路径
+        canvas_height = (max_depth + 1) * (self.node_height + self.node_spacing_y) + 2 * self.margin
+        
+        # 按层级分组节点
+        nodes_by_level = {}
+        for node, level in levels.items():
+            if level not in nodes_by_level:
+                nodes_by_level[level] = []
+            nodes_by_level[level].append(node)
+        
+        # 计算每个节点的位置
         positions = {}
-        node_names = [node.id for node in nodes]
-
-        # 简单的网格布局
-        cols = min(len(node_names), 4)  # 最多4列
-        rows = (len(node_names) + cols - 1) // cols
-        for i, node_name in enumerate(node_names):
-            col = i % cols
-            row = i // cols
-
-            x = 5 + col * self.node_spacing_x
-            y = 3 + row * self.node_spacing_y
-            positions[node_name] = (x, y)
-        return positions
-
-    def convert_to_ascii(self, graph: Graph) -> str:
+        
+        for level, level_nodes in nodes_by_level.items():
+            level_width = len(level_nodes)
+            
+            # 计算该层节点的起始x位置（居中对齐）
+            total_level_width = level_width * self.node_width + (level_width - 1) * self.node_spacing_x
+            start_x = (canvas_width - total_level_width) // 2
+            
+            # 计算y位置
+            y = self.margin + level * (self.node_height + self.node_spacing_y)
+            
+            # 为该层的每个节点分配位置
+            for i, node in enumerate(level_nodes):
+                x = start_x + i * (self.node_width + self.node_spacing_x)
+                positions[node] = (x, y)
+        
+        return positions, canvas_width, canvas_height
+    
+    def get_connection_point(self, node_x: int, node_y: int, target_x: int, target_y: int) -> Tuple[int, int]:
+        """计算节点的连接点（边缘而不是中心）"""
+        node_center_x = node_x + self.node_width // 2
+        node_center_y = node_y + self.node_height // 2
+        
+        # 计算目标方向
+        dx = target_x - node_center_x
+        dy = target_y - node_center_y
+        
+        # 根据方向确定连接点
+        if abs(dy) > abs(dx):  # 主要是垂直方向
+            if dy > 0:  # 目标在下方，连接下边缘
+                return node_center_x, node_y + self.node_height
+            else:  # 目标在上方，连接上边缘
+                return node_center_x, node_y - 1
+        else:  # 主要是水平方向
+            if dx > 0:  # 目标在右侧，连接右边缘
+                return node_x + self.node_width, node_center_y
+            else:  # 目标在左侧，连接左边缘
+                return node_x - 1, node_center_y
+    
+    def convert_to_ascii(self, graph:Graph) -> str:
+        """将pydot图形转换为ASCII"""
         nodes = graph.nodes
         edges = graph.edges
         if len(nodes) == 0:
             return ""
-
-        positions = self.layout_nodes(nodes)
-
-        max_x = max(pos[0] for pos in positions.values()) + self.node_width + 5
-        max_y = max(pos[1] for pos in positions.values()) + self.node_height + 3
-
-        canvas = ASCIIGraphCanvas(max_x, max_y)
-
-        for e in edges:
-            src = e.src.id
-            dst = e.dst.id
+        
+        
+        # 使用新的布局系统计算位置和画布大小
+        positions, canvas_width, canvas_height = self.layout_nodes(nodes, edges)
+        
+        # 创建画布
+        canvas = ASCIIGraphCanvas(canvas_width, canvas_height)
+        
+        # 绘制边
+        for  e in edges:
+            src = e.src
+            dst = e.dst
             if src in positions and dst in positions:
                 src_x, src_y = positions[src]
                 dst_x, dst_y = positions[dst]
-
-                # 计算连接点（节点中心）
-                src_center_x = src_x + self.node_width // 2
-                src_center_y = src_y + self.node_height // 2
-                dst_center_x = dst_x + self.node_width // 2
-                dst_center_y = dst_y + self.node_height // 2
-
-                canvas.draw_arrow(
-                    src_center_x, src_center_y, dst_center_x, dst_center_y
+                
+                # 计算智能连接点（连接到节点边缘而不是中心）
+                src_connect_x, src_connect_y = self.get_connection_point(
+                    src_x, src_y, dst_x + self.node_width // 2, dst_y + self.node_height // 2
                 )
-        for node in nodes:
-            node_name = node.id
+                dst_connect_x, dst_connect_y = self.get_connection_point(
+                    dst_x, dst_y, src_x + self.node_width // 2, src_y + self.node_height // 2
+                )
+                
+                canvas.draw_arrow(src_connect_x, src_connect_y, dst_connect_x, dst_connect_y)
+        
+        # 绘制节点
+        for  n in nodes:
+            node_name = n.id
+            label = n.label
+            shape = n.shape
             if node_name in positions:
                 x, y = positions[node_name]
-                label = ""
-                if node.label == "":
-                    label = node.id
-                else:
-                    label = node.label
-                shape = node.shape
-
-                if shape == NodeShape.RECT:
+                 
+                
+                if shape == 'box':
                     canvas.draw_box(x, y, self.node_width, self.node_height, label)
-                else:
-                    # FIXME more shapes
-                    canvas.draw_circle(
-                        x + self.node_width // 2,
-                        y + self.node_height // 2,
-                        self.node_width // 2,
-                        label,
-                    )
-
+                else:  # 默认为椭圆
+                    canvas.draw_circle(x + self.node_width // 2, y + self.node_height // 2, 
+                                     self.node_width // 2, label)
+        
         return canvas.to_string()
+
+
+# class GraphToASCII:
+#     def __init__(self):
+#         self.canvas_width = 80
+#         self.canvas_height = 40
+#         self.node_width = 8
+#         self.node_height = 3
+#         self.node_spacing_x = 15
+#         self.node_spacing_y = 8
+
+#     def layout_nodes(self, nodes: List[Node]) -> Dict[str, Tuple[int, int]]:
+#         positions = {}
+#         node_names = [node.id for node in nodes]
+
+#         # 简单的网格布局
+#         cols = min(len(node_names), 4)  # 最多4列
+#         rows = (len(node_names) + cols - 1) // cols
+#         for i, node_name in enumerate(node_names):
+#             col = i % cols
+#             row = i // cols
+
+#             x = 5 + col * self.node_spacing_x
+#             y = 3 + row * self.node_spacing_y
+#             positions[node_name] = (x, y)
+#         return positions
+
+#     def convert_to_ascii(self, graph: Graph) -> str:
+#         nodes = graph.nodes
+#         edges = graph.edges
+#         if len(nodes) == 0:
+#             return ""
+
+#         positions = self.layout_nodes(nodes)
+
+#         max_x = max(pos[0] for pos in positions.values()) + self.node_width + 5
+#         max_y = max(pos[1] for pos in positions.values()) + self.node_height + 3
+
+#         canvas = ASCIIGraphCanvas(max_x, max_y)
+
+#         for e in edges:
+#             src = e.src.id
+#             dst = e.dst.id
+#             if src in positions and dst in positions:
+#                 src_x, src_y = positions[src]
+#                 dst_x, dst_y = positions[dst]
+
+#                 # 计算连接点（节点中心）
+#                 src_center_x = src_x + self.node_width // 2
+#                 src_center_y = src_y + self.node_height // 2
+#                 dst_center_x = dst_x + self.node_width // 2
+#                 dst_center_y = dst_y + self.node_height // 2
+
+#                 canvas.draw_arrow(
+#                     src_center_x, src_center_y, dst_center_x, dst_center_y
+#                 )
+#         for node in nodes:
+#             node_name = node.id
+#             if node_name in positions:
+#                 x, y = positions[node_name]
+#                 label = ""
+#                 if node.label == "":
+#                     label = node.id
+#                 else:
+#                     label = node.label
+#                 shape = node.shape
+
+#                 if shape == NodeShape.RECT:
+#                     canvas.draw_box(x, y, self.node_width, self.node_height, label)
+#                 else:
+#                     # FIXME more shapes
+#                     canvas.draw_circle(
+#                         x + self.node_width // 2,
+#                         y + self.node_height // 2,
+#                         self.node_width // 2,
+#                         label,
+#                     )
+
+#         return canvas.to_string()
 
 
 if __name__ == "__main__":
