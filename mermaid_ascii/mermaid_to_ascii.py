@@ -328,7 +328,11 @@ class Lexer:
                 cur += 1
                 continue
             # process --o --x x-- o-- <-- --> <-->
-            cur = self.parse_line(text, cur)
+            new_cur = self.parse_line(text, cur)
+
+            if new_cur != cur:
+                punctor_num = 0
+            cur = new_cur
 
             punctor = "[](){}|&<>/\\"
             p2 = punctor + "-.="
