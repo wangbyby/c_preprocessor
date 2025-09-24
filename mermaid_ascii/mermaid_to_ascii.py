@@ -753,83 +753,16 @@ class LayOut:
             return []
 
 
-# class GraphToASCII:
-#     def __init__(self):
-#         self.canvas_width = 80
-#         self.canvas_height = 40
-#         self.node_width = 8
-#         self.node_height = 3
-#         self.node_spacing_x = 15
-#         self.node_spacing_y = 8
+class GraphToASCII:
+    def __init__(self):
+        pass
 
-#     def layout_nodes(self, nodes: List[Node]) -> Dict[str, Tuple[int, int]]:
-#         positions = {}
-#         node_names = [node.id for node in nodes]
+    def graph_to_ascii(self, g: Dot) -> str:
+        # first calc all node's position info
+        for n in g.get_nodes():
+            pass
 
-#         # 简单的网格布局
-#         cols = min(len(node_names), 4)  # 最多4列
-#         rows = (len(node_names) + cols - 1) // cols
-#         for i, node_name in enumerate(node_names):
-#             col = i % cols
-#             row = i // cols
-
-#             x = 5 + col * self.node_spacing_x
-#             y = 3 + row * self.node_spacing_y
-#             positions[node_name] = (x, y)
-#         return positions
-
-#     def convert_to_ascii(self, graph: Graph) -> str:
-#         nodes = graph.nodes
-#         edges = graph.edges
-#         if len(nodes) == 0:
-#             return ""
-
-#         positions = self.layout_nodes(nodes)
-
-#         max_x = max(pos[0] for pos in positions.values()) + self.node_width + 5
-#         max_y = max(pos[1] for pos in positions.values()) + self.node_height + 3
-
-#         canvas = ASCIIGraphCanvas(max_x, max_y)
-
-#         for e in edges:
-#             src = e.src.id
-#             dst = e.dst.id
-#             if src in positions and dst in positions:
-#                 src_x, src_y = positions[src]
-#                 dst_x, dst_y = positions[dst]
-
-#                 # 计算连接点（节点中心）
-#                 src_center_x = src_x + self.node_width // 2
-#                 src_center_y = src_y + self.node_height // 2
-#                 dst_center_x = dst_x + self.node_width // 2
-#                 dst_center_y = dst_y + self.node_height // 2
-
-#                 canvas.draw_arrow(
-#                     src_center_x, src_center_y, dst_center_x, dst_center_y
-#                 )
-#         for node in nodes:
-#             node_name = node.id
-#             if node_name in positions:
-#                 x, y = positions[node_name]
-#                 label = ""
-#                 if node.label == "":
-#                     label = node.id
-#                 else:
-#                     label = node.label
-#                 shape = node.shape
-
-#                 if shape == NodeShape.RECT:
-#                     canvas.draw_box(x, y, self.node_width, self.node_height, label)
-#                 else:
-#                     # FIXME more shapes
-#                     canvas.draw_circle(
-#                         x + self.node_width // 2,
-#                         y + self.node_height // 2,
-#                         self.node_width // 2,
-#                         label,
-#                     )
-
-#         return canvas.to_string()
+        return ""
 
 
 if __name__ == "__main__":
@@ -849,7 +782,7 @@ if __name__ == "__main__":
         
         Next --- Final[结束]
         
-        Sub1[子节点1] & Sub2[子节点2] --> Merge[合并]
+        Sub1[子节点10000000000000000000000000000000000] & Sub2[子节点2] --> Merge[合并]
     """
 
     print("Parsing Mermaid diagram...")
@@ -869,9 +802,11 @@ if __name__ == "__main__":
         layout = LayOut()
         dot_graph = layout.layout_calc(g)
 
-        for g in dot_graph:
-            print(g.to_string())
-        logging.info(f"Dot graph after layout: {dot_graph}")
+        for dg in dot_graph:
+            logging.info(f"Dot graph after layout: {dg. get_graph_defaults ()}")
+            d = GraphToASCII()
+            ascii_art = d.graph_to_ascii(dg)
+            print(ascii_art)
 
     else:
         print("No graph found in the input")
