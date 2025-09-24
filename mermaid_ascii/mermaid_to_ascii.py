@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
+import json
 from typing import Dict, List, Tuple, Union
 import logging
 from pydot import Edge, EdgeEndpoint, Graph, Node, Dot, Subgraph, AttributeDict
@@ -753,16 +754,116 @@ class LayOut:
             return []
 
 
-class GraphToASCII:
-    def __init__(self):
-        pass
+class DotToASCII:
+    def __init__(self, scale=1.0, max_width=200, max_height=60, label_max=20):
+        self.scale = scale
+        self.max_width = max_width
+        self.max_height = max_height
+        self.label_max = label_max
+        self.graph: Dot | None = None
+        self.bb: tuple | None = None
+        self.grid = None
+        self.node_coords = {}
+        self.node_labels = {}
 
-    def graph_to_ascii(self, g: Dot) -> str:
-        # first calc all node's position info
-        for n in g.get_nodes():
-            pass
+    def load_dot(self, dot: Dot):
+        self.graph = dot
+        # 解析 bounding box
+        parsing_bb = self.graph.get_graph_defaults()
+        bb_str = ""
 
-        return ""
+        if isinstance(parsing_bb, list):
+            for item in parsing_bb:
+                if isinstance(item, dict) and "bb" in item:
+                    bb_str = item["bb"]
+                    break
+        if bb_str:
+            self.bb = tuple(map(float, bb_str.strip('"').split(",")))
+        else:
+            self.bb = (0, 0, 100, 100)
+
+    def _map_coord(self, x, y, width, height):
+        """将坐标映射到网格"""
+        if self.bb is None:
+            raise ValueError("Bounding box not set")
+        xmin, ymin, xmax, ymax = self.bb
+        gx = int((x - xmin) / (xmax - xmin) * (width - 1))
+        gy = int((ymax - y) / (ymax - ymin) * (height - 1))  # y 轴翻转
+        return gx, gy
+
+    def _draw_line(self, grid, x0, y0, x1, y1, char="*"):
+        """Bresenham 画直线"""
+        dx = abs(x1 - x0)
+        dy = -abs(y1 - y0)
+        sx = 1 if x0 < x1 else -1
+        sy = 1 if y0 < y1 else -1
+        err = dx + dy
+        while True:
+            if 0 <= y0 < len(grid) and 0 <= x0 < len(grid[0]):
+                if grid[y0][x0] == " ":
+                    grid[y0][x0] = char
+            if x0 == x1 and y0 == y1:
+                break
+            e2 = 2 * err
+            if e2 >= dy:
+                err += dy
+                x0 += sx
+            if e2 <= dx:
+                err += dx
+                y0 += sy
+
+    def render_ascii(self):
+        if self.graph is None or self.bb is None:
+            raise ValueError("Graph or bounding box not set")
+
+        # ---------- 先统计 label 长度，决定画布 ----------
+        labels = []
+        for node in self.graph.get_nodes():
+            attrs = node.get_attributes()
+            label = attrs.get("label", node.get_name())
+            if not label or label == "\\N":
+                label = node.get_name()
+            if len(label) > self.label_max:
+                label = label[: self.label_max - 2] + ".."
+            labels.append(label)
+            self.node_labels[node.get_name()] = label
+
+        max_label_len = max((len(lbl) for lbl in labels), default=1)
+        xmin, ymin, xmax, ymax = self.bb
+        width = min(self.max_width, int((xmax - xmin) * self.scale + max_label_len * 2))
+        height = min(self.max_height, int((ymax - ymin) * self.scale + 5))
+
+        self.grid = [[" " for _ in range(width)] for _ in range(height)]
+
+        # ---------- 放置节点 ----------
+        for node in self.graph.get_nodes():
+            attrs = node.get_attributes()
+            if "pos" not in attrs:
+                continue
+            x, y = map(float, attrs["pos"].strip('"').split(","))
+            gx, gy = self._map_coord(x, y, width, height)
+
+            label = self.node_labels[node.get_name()]
+            # 将 label 放到网格中（居中）
+            startx = max(0, gx - len(label) // 2)
+            for i, ch in enumerate(label):
+                px = startx + i
+                if 0 <= px < width and 0 <= gy < height:
+                    self.grid[gy][px] = ch
+            self.node_coords[node.get_name()] = (gx, gy)
+
+        # ---------- 画边 ----------
+        for edge in self.graph.get_edges():
+            src = edge.get_source()
+            dst = edge.get_destination()
+            if src in self.node_coords and dst in self.node_coords:
+                x0, y0 = self.node_coords[src]
+                x1, y1 = self.node_coords[dst]
+                self._draw_line(self.grid, x0, y0, x1, y1)
+
+        # ---------- 输出 ----------
+        for row in self.grid:
+            print("".join(row))
 
 
 if __name__ == "__main__":
@@ -804,8 +905,9 @@ if __name__ == "__main__":
 
         for dg in dot_graph:
             logging.info(f"Dot graph after layout: {dg. get_graph_defaults ()}")
-            d = GraphToASCII()
-            ascii_art = d.graph_to_ascii(dg)
+            d = DotToASCII()
+            d.load_dot(dg)
+            ascii_art = d.render_ascii()
             print(ascii_art)
 
     else:
