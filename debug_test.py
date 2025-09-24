@@ -1,42 +1,61 @@
 #!/usr/bin/env python3
-import json
+"""
+调试mermaid解析问题
+"""
 
-# Load test_3.json and analyze the coordinates
-with open('test_ascii/test_3.json', 'r', encoding='utf-8') as f:
-    data = json.load(f)
+import sys
+import os
+sys.path.append('mermaid_ascii')
 
-elements = data.get('elements', [])
+from mermaid_to_ascii import Parser
+import logging
 
-print("First 10 elements analysis:")
-for i, element in enumerate(elements[:10]):
-    element_type = element.get('type', '')
-    x = element.get('x', 0)
-    y = element.get('y', 0)
-    width = element.get('width', 0)
-    height = element.get('height', 0)
-    text = element.get('text', '')
+# 设置日志级别
+logging.basicConfig(level=logging.DEBUG)
+
+def debug_parsing():
+    """调试解析过程"""
     
-    print(f"{i+1}. Type: {element_type}")
-    print(f"   Position: ({x:.1f}, {y:.1f})")
-    print(f"   Size: {width}x{height}")
-    if text:
-        print(f"   Text: '{text}'")
-    print()
-
-# Calculate bounds
-min_x = min_y = float('inf')
-max_x = max_y = float('-inf')
-
-for element in elements:
-    x = element.get('x', 0)
-    y = element.get('y', 0)
-    width = element.get('width', 0)
-    height = element.get('height', 0)
+    mermaid_text = """
+graph TD
+    A[开始] --> B[这是一个很长的处理步骤标签]
+    B --> C[子节点100000000000000000000000000000000]
+    C --> D[结束]
+    """
     
-    min_x = min(min_x, x)
-    min_y = min(min_y, y)
-    max_x = max(max_x, x + width)
-    max_y = max(max_y, y + height)
+    print("原始Mermaid代码:")
+    print(mermaid_text)
+    
+    # 解析mermaid
+    parser = Parser()
+    parser.parse(mermaid_text)
+    
+    if not parser.graph_roots:
+        print("解析失败，没有找到图形")
+        return
+    
+    graph = parser.graph_roots[0]
+    
+    print(f"\n解析结果:")
+    print(f"节点数量: {len(graph.get_nodes())}")
+    print(f"边数量: {len(graph.get_edge_list())}")
+    
+    print("\n节点信息:")
+    for node in graph.get_nodes():
+        name = node.get_name()
+        label = node.get_attributes().get("label", "")
+        print(f"  节点: {name}, 标签: '{label}'")
+    
+    print("\n边信息:")
+    for edge in graph.get_edge_list():
+        src = edge.get_source()
+        dst = edge.get_destination()
+        print(f"  边: {src} -> {dst}")
+    
+    # 生成dot格式查看
+    dot_string = graph.to_string()
+    print(f"\n生成的DOT格式:")
+    print(dot_string)
 
-print(f"Bounds: ({min_x:.1f}, {min_y:.1f}) to ({max_x:.1f}, {max_y:.1f})")
-print(f"Content size: {max_x - min_x:.1f} x {max_y - min_y:.1f}")
+if __name__ == "__main__":
+    debug_parsing()

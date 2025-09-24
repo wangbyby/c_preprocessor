@@ -22,6 +22,12 @@ class ASCIIGraphCanvas:
 
     def draw_box(self, x: int, y: int, width: int, height: int, text: str = ""):
         """绘制矩形框"""
+        # 如果有文本，确保box宽度至少能容纳文本加上边框
+        if text:
+            min_width = len(text) + 2  # 文本长度 + 左右边框
+            if width < min_width:
+                width = min_width
+        
         # 绘制边框
         for i in range(width):
             self.set_char(x + i, y, "-")  # 上边
@@ -37,13 +43,12 @@ class ASCIIGraphCanvas:
         self.set_char(x, y + height - 1, "+")
         self.set_char(x + width - 1, y + height - 1, "+")
 
-        # 添加文本
+        # 添加文本 - 不截断，完整显示
         if text:
             text_x = x + (width - len(text)) // 2
             text_y = y + height // 2
             for i, char in enumerate(text):
-                if text_x + i < x + width - 1:
-                    self.set_char(text_x + i, text_y, char)
+                self.set_char(text_x + i, text_y, char)
 
     def draw_circle(self, x: int, y: int, radius: int, text: str = ""):
         """绘制圆形"""
@@ -344,9 +349,27 @@ class Parser:
         last = self.graph_stack[-1]
         if isinstance(node, list):
             for n in node:
-                last.add_node(n)
+                self._add_single_node(last, n)
             return
-        last.add_node(node)
+        self._add_single_node(last, node)
+    
+    def _add_single_node(self, graph, node):
+        """添加单个节点，避免重复"""
+        node_name = node.get_name()
+        
+        # 检查是否已经存在同名节点
+        existing_nodes = graph.get_nodes()
+        for existing_node in existing_nodes:
+            if existing_node.get_name() == node_name:
+                # 如果新节点有标签而现有节点没有，更新标签
+                new_label = node.get_attributes().get("label", "")
+                existing_label = existing_node.get_attributes().get("label", "")
+                if new_label and not existing_label:
+                    existing_node.set("label", new_label)
+                return  # 节点已存在，不重复添加
+        
+        # 节点不存在，添加新节点
+        graph.add_node(node)
 
     def add_edge(self, edge: Union[Edge, List[Edge]]):
         if len(self.graph_stack) == 0:
@@ -759,12 +782,11 @@ class LayOut:
 
 
 class DotToASCII:
-    def __init__(self, scale=1.0, max_width=200, max_height=60, label_max=20, 
+    def __init__(self, scale=1.0, max_width=200, max_height=60, 
                  points_per_char_width=8, points_per_char_height=12):
         self.scale = scale
         self.max_width = max_width
         self.max_height = max_height
-        self.label_max = label_max
         self.points_per_char_width = points_per_char_width
         self.points_per_char_height = points_per_char_height
         self.graph: Dot | None = None
@@ -869,12 +891,12 @@ class DotToASCII:
         
         return x, y, width, height
 
-    def get_node_shape_type(self, node) -> str:
+    def get_node_shape_type(self, node:Node) -> str:
         """获取节点形状类型"""
         shape = node.get_attributes().get("shape", "box")
         return shape
 
-    def render_node(self, grid: ASCIIGraphCanvas, node):
+    def render_node(self, grid: ASCIIGraphCanvas, node: Node):
         """渲染单个节点"""
         dot_x, dot_y, width_inches, height_inches = self.parse_node_position(node)
         ascii_x, ascii_y = self.dot_to_ascii_position(dot_x, dot_y)
@@ -882,23 +904,26 @@ class DotToASCII:
         
         # 获取标签
         label = node.get_attributes().get("label", node.get_name())
-        if label and len(label) > self.label_max:
-            label = label[:self.label_max-3] + "..."
         
         # 获取形状
         shape = self.get_node_shape_type(node)
+        
+        # 根据label长度调整box宽度，确保能完整显示文本
+        if label and shape not in ["circle", "doublecircle"]:
+            min_width = len(label) + 2  # 文本长度 + 左右边框
+            char_width = max(char_width, min_width)
         
         # 调整位置使节点居中
         start_x = max(0, ascii_x - char_width // 2)
         start_y = max(0, ascii_y - char_height // 2)
         
-        # 确保不超出画布
+        # 确保不超出画布右边界，如果超出则向左调整
         if start_x + char_width >= self.ascii_width:
-            start_x = self.ascii_width - char_width
+            start_x = max(0, self.ascii_width - char_width)
         if start_y + char_height >= self.ascii_height:
-            start_y = self.ascii_height - char_height
+            start_y = max(0, self.ascii_height - char_height)
             
-        logging.debug(f"Rendering node {node.get_name()}: pos=({dot_x},{dot_y}) -> ascii=({start_x},{start_y}) size={char_width}x{char_height}")
+        logging.debug(f"Rendering node {node.get_name()}: pos=({dot_x},{dot_y}) -> ascii=({start_x},{start_y}) size={char_width}x{char_height} label='{label}'")
         
         # 根据形状渲染
         if shape in ["circle", "doublecircle"]:
@@ -951,7 +976,7 @@ class DotToASCII:
             self.render_node(grid, node)
         
         # 渲染所有边
-        self.render_edges(grid)
+        # self.render_edges(grid)
 
         return grid.to_string()
 
