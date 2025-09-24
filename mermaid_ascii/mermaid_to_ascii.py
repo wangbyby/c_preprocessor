@@ -130,6 +130,23 @@ class NodeShape(Enum):
     TRAPEZOID_A = "TRAPEZOID"  # [/ \]
     TRAPEZOID_B = "TRAPEZOID_B"  # [\ /]
 
+    def to_pydot_shape(self) -> str:
+        mapping = {
+            NodeShape.RECT: "box",
+            NodeShape.ROUND: "oval",
+            NodeShape.CIRCLE: "circle",
+            NodeShape.DOUBLECIRCLE: "doublecircle",
+            NodeShape.DIAMOND: "diamond",
+            NodeShape.AsymmetricShapeRight: "trapezium",
+            NodeShape.AsymmetricShapeLeft: "trapezium",
+            NodeShape.HEXAGON: "hexagon",
+            NodeShape.LEFT_RECT: "parallelogram",
+            NodeShape.RIGHT_RECT: "parallelogram",
+            NodeShape.TRAPEZOID_A: "trapezium",
+            NodeShape.TRAPEZOID_B: "trapezium",
+        }
+        return mapping.get(self, "box")
+
 
 class LineType(Enum):
     SOLID = "SOLID"  #  ---, -->
@@ -359,7 +376,7 @@ class Parser:
             token is not None
             and (token.type == TokenType.LINE or token.type == TokenType.AND)
         ):
-            return (cur, Node(node_id, label="", shape=shape))
+            return (cur, Node(node_id, label="", shape=shape.to_pydot_shape()))
 
         cur += 1
 
@@ -402,7 +419,7 @@ class Parser:
 
                 if token is None or token.type != TokenType.R_PAREN:
                     raise ValueError(f"Invalid node shape for node {node_id}")
-            return (cur, Node(node_id, label=node_label, shape=shape))
+            return (cur, Node(node_id, label=node_label, shape=shape.to_pydot_shape()))
 
         if token.type == TokenType.L_BRACKET:
             # [ ], [<,  [/ /], [\ \], [/ \], [\ /]
@@ -458,13 +475,22 @@ class Parser:
                 else:
                     raise ValueError(f"Invalid node shape for node {node_id}")
 
-                return (cur, Node(node_id, label=node_label, shape=shape))
+                return (
+                    cur,
+                    Node(node_id, label=node_label, shape=shape.to_pydot_shape()),
+                )
             if token.type == TokenType.RIGHT:  # [>
                 shape = NodeShape.AsymmetricShapeRight
-                return (cur, Node(node_id, label=node_label, shape=shape))
+                return (
+                    cur,
+                    Node(node_id, label=node_label, shape=shape.to_pydot_shape()),
+                )
             if token.type == TokenType.LEFT:  # [<
                 shape = NodeShape.AsymmetricShapeLeft
-                return (cur, Node(node_id, label=node_label, shape=shape))
+                return (
+                    cur,
+                    Node(node_id, label=node_label, shape=shape.to_pydot_shape()),
+                )
 
         if token.type == TokenType.LEFT:  # <]
             shape = NodeShape.AsymmetricShapeLeft
@@ -480,7 +506,7 @@ class Parser:
                 token = tokens[cur] if cur < len(tokens) else None
             if token is None or token.type != TokenType.R_BRACKET:
                 raise ValueError(f"Invalid node shape for node {node_id}")
-            return cur, Node(node_id, label=node_label, shape=shape)
+            return cur, Node(node_id, label=node_label, shape=shape.to_pydot_shape())
         if token.type == TokenType.RIGHT:  # >]
             shape = NodeShape.AsymmetricShapeRight
             cur += 1
@@ -494,7 +520,7 @@ class Parser:
                 token = tokens[cur] if cur < len(tokens) else None
             if token is None or token.type != TokenType.R_BRACKET:
                 raise ValueError(f"Invalid node shape for node {node_id}")
-            return cur, Node(node_id, label=node_label, shape=shape)
+            return cur, Node(node_id, label=node_label, shape=shape.to_pydot_shape())
 
         return (cur, None)
 
@@ -750,10 +776,21 @@ class LayOut:
         # Generate layout
         try:
             l = ""
+            output_format = "plain-ext"
             if isinstance(g, Dot):
-                l = g.create()
+                l = g.create(prog="dot", format=output_format)
 
-            print(l)
+            if isinstance(l, bytes):
+                try:
+                    l = l.decode("utf-8")
+                except Exception:
+                    logging.info(f"decode {output_format} with utf-8 failed, try gbk")
+                    try:
+                        l = l.decode("gbk")
+                    except Exception:
+                        logging.error(f"decode {output_format} with gbk failed")
+
+            logging.info(f"pydot layout output: {l}")
 
             # Convert to simple position dict for compatibility
             positions = {}
@@ -1181,6 +1218,9 @@ if __name__ == "__main__":
         )
 
         print("\nGenerating ASCII diagram using pydot layout...")
+
+        logging.info(f"Graph: {g.to_string()}")
+
         layout = LayOut()
         ascii_result = layout.convert_to_ascii(g)
 
