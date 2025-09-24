@@ -781,6 +781,8 @@ class DotToASCII:
             self.bb = tuple(map(float, bb_str.strip('"').split(",")))
         else:
             self.bb = (0, 0, 100, 100)
+        
+        logging.info(f"Graph bounding box: {self.bb}")
 
     def _map_coord(self, x, y, width, height):
         """将坐标映射到网格"""
