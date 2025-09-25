@@ -96,6 +96,10 @@ class Node:
     label: str = ""
     shape: NodeShape = NodeShape.RECT
 
+    """ position in the grid layout """
+    grid_x: int = 0
+    grid_y: int = 0
+
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, Node):
             return False
@@ -103,6 +107,13 @@ class Node:
 
     def __hash__(self) -> int:
         return hash(self.id)
+
+    def get_neighbors(self, graph: "Graph") -> List["Node"]:
+        neighbors = []
+        for edge in graph.get_edges():
+            if edge.src == self:
+                neighbors.append(edge.dst)
+        return neighbors
 
 
 @dataclass
@@ -180,3 +191,9 @@ class Graph:
 
     def get_edges(self) -> List[Edge]:
         return self.edges
+
+    def get_root_node(self) -> List[Node]:
+        all_nodes = set(self.nodes)
+        dst_nodes = set(edge.dst for edge in self.edges)
+        root_nodes = list(all_nodes - dst_nodes)
+        return root_nodes
