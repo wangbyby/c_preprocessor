@@ -842,7 +842,7 @@ class DotToASCII:
         # 确保在画布范围内
         ascii_x = max(0, min(ascii_x, self.ascii_width - 1))
         ascii_y = max(0, min(ascii_y, self.ascii_height - 1))
-        
+        logging.info(f"dot ({dot_x}, {dot_y}) -> ({ascii_x},{ascii_y})")
         return ascii_x, ascii_y
 
     def dot_size_to_ascii_size(self, width_inches: float, height_inches: float) -> Tuple[int, int]:
@@ -896,8 +896,79 @@ class DotToASCII:
         shape = node.get_attributes().get("shape", "box")
         return shape
 
+    def render_all_nodes(self, grid: ASCIIGraphCanvas):
+        """渲染所有节点，包含碰撞检测"""
+        import sys
+        import os
+        sys.path.append(os.path.dirname(__file__))
+        from collision_resolver import CollisionResolver, Rectangle
+        
+        if not self.graph:
+            return
+        
+        # 收集所有节点的矩形信息
+        rectangles = []
+        node_info = {}  # 存储节点的详细信息
+        
+        for node in self.graph.get_nodes():
+            if node.get_name().strip('"') in ['node', 'edge', 'graph']:
+                continue
+                
+            dot_x, dot_y, width_inches, height_inches = self.parse_node_position(node)
+            ascii_x, ascii_y = self.dot_to_ascii_position(dot_x, dot_y)
+            char_width, char_height = self.dot_size_to_ascii_size(width_inches, height_inches)
+            
+            # 获取标签和形状
+            label = node.get_attributes().get("label", node.get_name())
+            shape = self.get_node_shape_type(node)
+            
+            # 根据label长度调整box宽度
+            if label and shape not in ["circle", "doublecircle"]:
+                min_width = len(label) + 2
+                char_width = max(char_width, min_width)
+            
+            # 计算初始位置（居中）
+            start_x = max(0, ascii_x - char_width // 2)
+            start_y = max(0, ascii_y - char_height // 2)
+            
+            # 创建矩形
+            rect = Rectangle(start_x, start_y, char_width, char_height, node.get_name())
+            rectangles.append(rect)
+            
+            # 存储节点信息
+            node_info[node.get_name()] = {
+                'node': node,
+                'label': label,
+                'shape': shape,
+                'char_width': char_width,
+                'char_height': char_height
+            }
+        
+        # 解决碰撞
+        resolver = CollisionResolver(grid.width, grid.height, min_spacing=2)
+        resolved_rectangles = resolver.resolve_collisions(rectangles)
+        
+        # 渲染解决碰撞后的节点
+        for rect in resolved_rectangles:
+            info = node_info[rect.node_id]
+            node = info['node']
+            label = info['label']
+            shape = info['shape']
+            
+            logging.debug(f"渲染节点 {rect.node_id}: 位置=({rect.x},{rect.y}) 尺寸={rect.width}x{rect.height} 标签='{label}'")
+            
+            # 根据形状渲染
+            if shape in ["circle", "doublecircle"]:
+                radius = min(rect.width, rect.height) // 2
+                center_x = rect.x + rect.width // 2
+                center_y = rect.y + rect.height // 2
+                grid.draw_circle(center_x, center_y, radius, label)
+            else:
+                # 默认使用矩形
+                grid.draw_box(rect.x, rect.y, rect.width, rect.height, label)
+
     def render_node(self, grid: ASCIIGraphCanvas, node: Node):
-        """渲染单个节点"""
+        """渲染单个节点（保留原方法以兼容性）"""
         dot_x, dot_y, width_inches, height_inches = self.parse_node_position(node)
         ascii_x, ascii_y = self.dot_to_ascii_position(dot_x, dot_y)
         char_width, char_height = self.dot_size_to_ascii_size(width_inches, height_inches)
@@ -985,19 +1056,8 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     test1 = """
-    graph TB
-        Start[开始] --> Process(处理)
-        Process --> Decision{判断}
-        
-        Decision -->|选项1| Action1[动作1]
-        Decision -->|选项2| Action2[动作2]
-        
-        Action1 -.->|虚线| Next[下一步]
-        Action2 ==>|粗线| Next
-        
-        Next --- Final[结束]
-        
-        Sub1[子节点10000000000000000000000000000000000] & Sub2[子节点2] --> Merge[合并]
+    graph TB        
+        Sub1[s10000000000000000000000000000000000] & Sub2[s2] --> Merge[merge]
     """
 
     print("Parsing Mermaid diagram...")

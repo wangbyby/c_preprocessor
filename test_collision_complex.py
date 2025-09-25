@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-测试mermaid转ASCII的box渲染
+测试复杂布局的碰撞检测
 """
 
 import sys
@@ -13,14 +13,18 @@ import logging
 # 设置日志级别
 logging.basicConfig(level=logging.INFO)
 
-def test_mermaid_with_long_labels():
-    """测试包含长标签的mermaid图"""
+def test_complex_collision():
+    """测试复杂布局的碰撞检测"""
     
     mermaid_text = """
-graph TD
-    A[开始] --> B[这是一个很长的处理步骤标签]
-    B --> C[子节点100000000000000000000000000000000]
-    C --> D[结束]
+graph LR
+    A[开始] --> B[步骤1]
+    A --> C[步骤2]
+    B --> D[长标签步骤3]
+    C --> D
+    D --> E[结束]
+    B --> F[分支步骤]
+    F --> E
     """
     
     print("原始Mermaid代码:")
@@ -43,7 +47,7 @@ graph TD
         return
     
     # 转换为ASCII
-    converter = DotToASCII(max_width=200, max_height=40)
+    converter = DotToASCII(max_width=150, max_height=30)
     converter.load_dot(graphs[0])
     
     # 计算所需的最小画布宽度
@@ -53,7 +57,7 @@ graph TD
             label = node.get_attributes().get("label", node.get_name())
             if label:
                 min_width = len(label) + 2
-                min_canvas_width = max(min_canvas_width, min_width + 10)  # 额外空间
+                min_canvas_width = max(min_canvas_width, min_width + 10)
     
     # 创建画布
     from mermaid_to_ascii import ASCIIGraphCanvas
@@ -70,4 +74,4 @@ graph TD
     return result
 
 if __name__ == "__main__":
-    test_mermaid_with_long_labels()
+    test_complex_collision()

@@ -1,15 +1,4 @@
 digraph G {
-Start [label=开始, shape=box];
-Process [label=处理, shape=oval];
-Start -> Process;
-Process [label="", shape=box];
-Decision [label="", shape=box];
-Decision [label="", shape=box];
-Action1 [label="", shape=box];
-Action2 [label="", shape=box];
-Next [label="", shape=box];
-Final [label=结束, shape=box];
-Next -> Final;
 Sub1 [label=子节点10000000000000000000000000000000000, shape=box];
 Sub2 [label=子节点2, shape=box];
 Merge [label=合并, shape=box];
