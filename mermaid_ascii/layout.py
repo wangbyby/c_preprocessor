@@ -48,7 +48,11 @@ also we need to calc label's pos to layout the graph
 from dataclasses import dataclass
 import logging
 from typing import Dict, List
-from mermaid_ascii.graph import Graph, Node
+import sys
+import os
+sys.path.append(os.path.dirname(__file__))
+
+from graph import Graph, Node
 
 
 class ASCIIGraphCanvas:

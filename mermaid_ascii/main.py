@@ -4,8 +4,12 @@ import json
 from typing import Dict, List, Tuple, Union
 import logging
 
-from mermaid_ascii.layout import Layout
-from mermaid_ascii.parsing import Parser
+import sys
+import os
+sys.path.append(os.path.dirname(__file__))
+
+from layout import Layout
+from parsing import Parser
 
 
 if __name__ == "__main__":

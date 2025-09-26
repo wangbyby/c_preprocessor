@@ -3,7 +3,11 @@ from enum import Enum
 import logging
 from typing import List, Tuple, Union
 
-from mermaid_ascii.graph import Direction, Edge, Graph, Line, Node, NodeShape
+import sys
+import os
+sys.path.append(os.path.dirname(__file__))
+
+from graph import Direction, Edge, Graph, Line, Node, NodeShape
 
 
 class TokenType(Enum):

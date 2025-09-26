@@ -96,10 +96,10 @@ class Node:
     label: str = ""
     shape: NodeShape = NodeShape.RECT
 
-    x: List[int] = [0, 1, 2]
-    y: List[int] = [0, 1, 2]
-    ascii_x: List[int] = [0, 1, 2]
-    ascii_y: List[int] = [0, 1, 2]
+    x: List[int] = field(default_factory=lambda: [0, 1, 2])
+    y: List[int] = field(default_factory=lambda: [0, 1, 2])
+    ascii_x: List[int] = field(default_factory=lambda: [0, 1, 2])
+    ascii_y: List[int] = field(default_factory=lambda: [0, 1, 2])
 
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, Node):

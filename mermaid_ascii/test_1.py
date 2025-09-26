@@ -1,5 +1,10 @@
 import pytest
-from mermaid_ascii.main import Parser, Graph
+import sys
+import os
+sys.path.append(os.path.dirname(__file__))
+
+from parsing import Parser
+from graph import Graph
 import logging
 
 
