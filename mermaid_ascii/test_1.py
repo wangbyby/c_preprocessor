@@ -1,5 +1,5 @@
 import pytest
-from mermaid_to_ascii import Parser, Graph
+from mermaid_ascii.main import Parser, Graph
 import logging
 
 
