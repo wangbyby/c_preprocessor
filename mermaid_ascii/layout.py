@@ -251,6 +251,8 @@ class Layout:
 
                 self.x_mapping[n.x[2]] = ascii_x
 
+                ascii_x+=2
+
             for y in nodes[0].y:
                 self.y_mapping[y] = ascii_y_level
                 ascii_y_level += 1
@@ -282,8 +284,10 @@ class Layout:
             x = n.ascii_x[0]
             y = n.ascii_y[0]
 
-            w = n.ascii_x[2] - x
-            h = n.ascii_y[2] - y
+            w = n.ascii_x[2] - x+1
+            h = n.ascii_y[2] - y+1
+
+            logging.info(f"hight is {h}")
 
             canvas.draw_box(x, y, w, h, n.label)
 
