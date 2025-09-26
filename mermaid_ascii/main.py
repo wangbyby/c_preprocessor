@@ -28,7 +28,7 @@ if __name__ == "__main__":
     if p.graph_roots:
         g = p.graph_roots[0]
 
-        print("\nGenerating ASCII diagram using pydot layout...")
+        print("\nGenerating ASCII diagram.")
 
         layout = Layout(g)
 

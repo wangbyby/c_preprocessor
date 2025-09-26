@@ -168,7 +168,6 @@ class ASCIIGraphCanvas:
 class Layout:
     def __init__(self, graph: Graph) -> None:
         self.graph = graph
-        self.levels: Dict[int, List[Node]] = {}
 
         self._calc_grid()
 
@@ -201,6 +200,13 @@ class Layout:
         for root in roots:
             self._level_range(self.graph, root)
 
+        self.levels: Dict[int, List[Node]] = {}
+
+
+        for node in self.graph.get_nodes():
+            logging.info(f"node {node.id} : y grid is {node.y}")
+
+
         for node in self.graph.get_nodes():
             center = node.y[1]
             l = self.levels.get(center, None)
@@ -214,6 +220,10 @@ class Layout:
             for n in l:
                 n.x = [x, x + 1, x + 2]
                 x += 4
+
+        for _, l in self.levels.items():
+            for node in l:
+                logging.info(f"node {node.id} : x grid is {node.x}")
 
     def calc_ascii_pos(self):
         self.x_mapping: Dict[int, int] = {}
@@ -248,12 +258,17 @@ class Layout:
             ascii_y = ascii_y_level + 2
             ascii_x_max = max(ascii_x_max, ascii_x)
 
-        for node in self.graph.nodes:
-            x = [self.x_mapping[i] for i in node.ascii_x]
-            y = [self.y_mapping[i] for i in node.ascii_y]
+        logging.info(f"xmapping : {self.x_mapping}")
 
-            node.ascii_x = x
-            node.ascii_y = y
+   
+        for node in self.graph.get_nodes():
+            pos_x = [self.x_mapping[i] for i in node.x]
+            pos_y = [self.y_mapping[i] for i in node.y]
+
+            node.ascii_x = pos_x
+            node.ascii_y = pos_y
+
+            logging.info(f"node {node.id} : {node.ascii_x}, {node.ascii_y}")
 
         return (ascii_x_max, ascii_y)
 
